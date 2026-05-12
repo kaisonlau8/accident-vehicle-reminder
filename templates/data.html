@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}数据查看 — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">数据查看</h2>
+
+{% if not snap_info %}
+<div class="card">
+  <p>暂无数据快照。请先爬取或导入 Excel 文件。</p>
+  <a href="/trigger" class="btn btn-primary">前往手动触发</a>
+</div>
+{% else %}
+
+<div class="grid" style="grid-template-columns: repeat(5, 1fr);">
+  <div class="stat"><div class="num">{{ snap_info.total }}</div><div class="label">总记录</div></div>
+  <div class="stat"><div class="num">{{ snap_info.active }}</div><div class="label">在修事故车</div></div>
+  <div class="stat"><div class="num">{{ snap_info.overdue }}</div><div class="label">≥7天超期</div></div>
+  <div class="stat"><div class="num">{{ snap_info.regions }}</div><div class="label">区域</div></div>
+  <div class="stat"><div class="num">{{ snap_info.stores }}</div><div class="label">门店</div></div>
+</div>
+
+<div class="card">
+  <h2>超期车辆列表（按天数排序）</h2>
+  <p style="color:var(--gray); margin-bottom:8px;">数据日期: {{ snap_info.date }}</p>
+  <table>
+    <thead>
+      <tr>
+        <th>级别</th>
+        <th>门店编码</th>
+        <th>门店名称</th>
+        <th>区域</th>
+        <th>VIN</th>
+        <th>车型</th>
+        <th>进店时间</th>
+        <th>天数</th>
+        <th>当前节点</th>
+        <th>提醒次数</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for v in overdue %}
+    <tr>
+      <td>
+        {% if v.level_label %}
+        <span class="badge badge-{{ v.get('level_icon', '').replace('⚠️','yellow').replace('🚨','orange').replace('🔴','red') }}">
+          {{ v.level_icon }} {{ v.level_label }}
+        </span>
+        {% endif %}
+      </td>
+      <td>{{ v.store_code }}</td>
+      <td>{{ v.store_name }}</td>
+      <td>{{ v.region }}</td>
+      <td>{{ v.vin }}</td>
+      <td>{{ v.vehicle_model }}</td>
+      <td>{{ v.entry_date }}</td>
+      <td style="font-weight:600; color: {% if v.days_in_shop >= 14 %}var(--red){% elif v.days_in_shop >= 10 %}var(--orange){% else %}#ad6800{% endif %};">
+        {{ v.days_in_shop }}
+      </td>
+      <td>{{ v.current_stage }}</td>
+      <td>
+        {% set hist = alert_history.get(v.vin) %}
+        {% if hist %}
+          第{{ hist.alert_count }}次<br><span style="font-size:12px;color:var(--gray);">首次: {{ hist.first_alert_date }}</span>
+        {% else %}
+          —
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

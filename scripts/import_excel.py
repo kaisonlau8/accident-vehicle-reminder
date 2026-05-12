@@ -1,0 +1,188 @@
+"""手动 DMS Excel 导入 → 标准化 repair_orders JSON。
+
+DMS 导出的"维修工单总部查询"Excel 包含 4 个 Sheet：
+- 维修工单（主表）：24 列，含门店/区域/状态/时间/VIN 等
+- 工单工时：维修内容与类型
+- 工单备件：配件明细
+- 工单其他项目：其他费用
+
+本脚本只提取"维修工单"Sheet，筛选事故车相关记录，标准化输出。
+"""
+
+import argparse
+import json
+import sys
+from datetime import datetime, date, timedelta
+from pathlib import Path
+
+import openpyxl
+
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "repair_orders"
+
+# 维修状态中文 → 标准阶段映射
+STATUS_TO_STAGE = {
+    "待派工": "待派工",
+    "待维修": "待维修",
+    "维修中": "维修中",
+    "质检": "质检",
+    "结算申请": "结算",
+    "结算": "结算",
+    "收款": "交车",
+}
+
+# 事故车相关维修类型关键词（在"工单工时"Sheet 的"维修类型"列中出现）
+ACCIDENT_KEYWORDS = ["事故", "钣喷", "钣金", "喷漆", "保险"]
+
+
+def _parse_datetime(val) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(val, date):
+        return val.strftime("%Y-%m-%d")
+    return str(val).strip() or None
+
+
+def _parse_date_only(val) -> str | None:
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.strftime("%Y-%m-%d")
+    if isinstance(val, date):
+        return val.strftime("%Y-%m-%d")
+    return str(val).strip()[:10] or None
+
+
+def _days_between(date_str1: str, date_str2: str) -> int:
+    try:
+        d1 = datetime.strptime(date_str1[:10], "%Y-%m-%d").date()
+        d2 = datetime.strptime(date_str2[:10], "%Y-%m-%d").date()
+        return (d2 - d1).days
+    except (ValueError, TypeError):
+        return -1
+
+
+def _is_qc_completed(row: dict) -> bool:
+    """根据维修状态判断是否已过质检节点。"""
+    stage = STATUS_TO_STAGE.get(row.get("维修状态", ""), "")
+    return stage in ("质检", "结算", "交车")
+
+
+def _is_accident_repair(work_order_no: str, labor_sheet) -> bool:
+    """在工单工时 Sheet 中查找该工单是否包含事故相关维修类型。"""
+    for labor_row in labor_sheet.iter_rows(min_row=2, values_only=True):
+        if labor_row[0] == work_order_no:
+            repair_type = str(labor_row[4] or "")
+            if any(kw in repair_type for kw in ACCIDENT_KEYWORDS):
+                return True
+    return False
+
+
+def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
+    """导入 DMS 维修工单 Excel，返回标准 JSON。"""
+    wb = openpyxl.load_workbook(xlsx_path, data_only=True)
+
+    # 读取工单工时 Sheet（用于判断事故车）
+    labor_sheet = None
+    if "工单工时" in wb.sheetnames and filter_accident:
+        labor_sheet = wb["工单工时"]
+
+    # 读取维修工单主表
+    main_sheet = wb["维修工单"] if "维修工单" in wb.sheetnames else wb[wb.sheetnames[0]]
+
+    # 读取表头
+    headers = [str(cell.value or "") for cell in main_sheet[1]]
+    col_idx = {h: i for i, h in enumerate(headers)}
+
+    today = date.today().strftime("%Y-%m-%d")
+    records = []
+    accident_count = 0
+    skipped_non_accident = 0
+
+    for row in main_sheet.iter_rows(min_row=2, values_only=True):
+        row_dict = {h: (row[i] if i < len(row) else None) for h, i in col_idx.items()}
+        work_order_no = str(row_dict.get("派工单号", "") or "").strip()
+        if not work_order_no:
+            continue
+
+        # 如果需要，过滤事故车
+        if filter_accident and labor_sheet:
+            if not _is_accident_repair(work_order_no, labor_sheet):
+                skipped_non_accident += 1
+                continue
+            accident_count += 1
+
+        entry_date = _parse_date_only(row_dict.get("到店时间"))
+        days_in_shop = _days_between(entry_date, today) if entry_date else -1
+        status = str(row_dict.get("维修状态", "") or "").strip()
+        current_stage = STATUS_TO_STAGE.get(status, status)
+
+        record = {
+            "repair_order_no": work_order_no,
+            "store_code": str(row_dict.get("门店编码", "") or "").strip(),
+            "store_name": str(row_dict.get("门店名称", "") or "").strip(),
+            "region": str(row_dict.get("大区", "") or "").strip(),
+            "status": status,
+            "current_stage": current_stage,
+            "service_advisor": str(row_dict.get("服务管家", "") or "").strip(),
+            "entry_date": entry_date,
+            "est_delivery_date": _parse_date_only(row_dict.get("预计交车时间")),
+            "qc_date": _parse_date_only(row_dict.get("质检时间")),
+            "settlement_date": _parse_date_only(row_dict.get("结算时间")),
+            "payment_date": _parse_date_only(row_dict.get("收款时间")),
+            "departure_date": _parse_date_only(row_dict.get("离店时间")),
+            "plate_no": str(row_dict.get("车牌号", "") or "").strip(),
+            "vin": str(row_dict.get("VIN码", "") or "").strip(),
+            "vehicle_model": str(row_dict.get("车系名称", "") or "").strip(),
+            "days_in_shop": days_in_shop,
+            "is_qc_completed": _is_qc_completed(row_dict),
+            "sender_name": str(row_dict.get("送修人", "") or "").strip(),
+            "sender_phone": str(row_dict.get("送修人电话", "") or "").strip(),
+        }
+        records.append(record)
+
+    result = {
+        "snapshot_date": today,
+        "snapshot_start": (date.today() - timedelta(days=30)).strftime("%Y-%m-%d"),
+        "source": "manual_excel",
+        "source_file": Path(xlsx_path).name,
+        "generated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+        "total_records": len(records),
+        "accident_records": accident_count if filter_accident else None,
+        "skipped_non_accident": skipped_non_accident if filter_accident else None,
+        "records": records,
+    }
+
+    # 保存 JSON
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = DATA_DIR / f"repair_orders_{today}.json"
+    with open(output_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2, default=str)
+
+    print(f"导入完成: {len(records)} 条记录")
+    if filter_accident:
+        print(f"  事故车: {accident_count} 条 | 跳过非事故: {skipped_non_accident} 条")
+    print(f"  输出: {output_path}")
+    return result
+
+
+def import_all_types(xlsx_path: str) -> dict:
+    """不过滤事故车，导入全部工单。"""
+    return import_excel(xlsx_path, filter_accident=False)
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="导入 DMS 维修工单 Excel")
+    parser.add_argument("xlsx_path", help="DMS 导出的维修工单 Excel 文件路径")
+    parser.add_argument("--all", action="store_true", help="不过滤事故车，导入全部工单")
+    args = parser.parse_args()
+
+    if not Path(args.xlsx_path).exists():
+        print(f"文件不存在: {args.xlsx_path}")
+        sys.exit(1)
+
+    if args.all:
+        import_all_types(args.xlsx_path)
+    else:
+        import_excel(args.xlsx_path)

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}清除缓存 — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">清除缓存和历史数据</h2>
+
+<p style="color:var(--red); margin-bottom:16px; font-weight:500;">此操作不可恢复，请谨慎选择！清除后相关数据将永久删除。</p>
+
+<div class="card" style="border-left: 4px solid var(--red);">
+  <h2>选择要清除的项目</h2>
+
+  <form id="clear-form">
+    <div class="checkbox" style="margin-bottom:8px;">
+      <input type="checkbox" id="cb-alert_history" name="targets" value="alert_history">
+      <label for="cb-alert_history" style="font-size:14px;">
+        <strong>告警提醒历史</strong>（alert_history.json）— 所有 VIN 的首次提醒日期和累计次数，清除后下次提醒重新从第1次开始
+      </label>
+    </div>
+
+    <div class="checkbox" style="margin-bottom:8px;">
+      <input type="checkbox" id="cb-followup_log" name="targets" value="followup_log">
+      <label for="cb-followup_log" style="font-size:14px;">
+        <strong>发送日志</strong>（followup_log.jsonl）— 所有飞书消息发送记录
+      </label>
+    </div>
+
+    <div class="checkbox" style="margin-bottom:8px;">
+      <input type="checkbox" id="cb-repair_orders" name="targets" value="repair_orders">
+      <label for="cb-repair_orders" style="font-size:14px;">
+        <strong>数据快照</strong>（repair_orders_*.json）— 导入后的 JSON 数据文件，清除后需重新爬取或导入
+      </label>
+    </div>
+
+    <div class="checkbox" style="margin-bottom:8px;">
+      <input type="checkbox" id="cb-reports" name="targets" value="reports">
+      <label for="cb-reports" style="font-size:14px;">
+        <strong>生成的报表</strong>（national/region/store_*.xlsx）— 所有已生成的 Excel 报表文件
+      </label>
+    </div>
+
+    <div class="checkbox" style="margin-bottom:8px;">
+      <input type="checkbox" id="cb-output" name="targets" value="output">
+      <label for="cb-output" style="font-size:14px;">
+        <strong>爬取的 Excel</strong>（maintenance_orders_*.xlsx）— 从 DMS 爬取的原始 Excel 文件
+      </label>
+    </div>
+
+    <div class="checkbox" style="margin-bottom:8px;">
+      <input type="checkbox" id="cb-recipients_cache" name="targets" value="recipients_cache">
+      <label for="cb-recipients_cache" style="font-size:14px;">
+        <strong>收件人缓存</strong>（recipients.json）— 手机号→open_id 映射缓存，清除后下次发送需重新解析
+      </label>
+    </div>
+
+    <div class="checkbox" style="margin-bottom:8px;">
+      <input type="checkbox" id="cb-browser_state" name="targets" value="browser_state">
+      <label for="cb-browser_state" style="font-size:14px;">
+        <strong>浏览器会话</strong>（browser-state.json）— 清除后需重新 ./login.sh 登录
+      </label>
+    </div>
+
+    <div class="checkbox" style="margin-bottom:16px;">
+      <input type="checkbox" id="cb-run_manifest" name="targets" value="run_manifest">
+      <label for="cb-run_manifest" style="font-size:14px;">
+        <strong>运行记录</strong>（run_manifest.json）— 最近一次运行的摘要信息
+      </label>
+    </div>
+
+    <div style="display:flex; gap:8px; align-items:center;">
+      <button type="button" class="btn btn-danger" onclick="clearSelected()">清除选中项</button>
+      <button type="button" class="btn btn-danger" onclick="clearAll()">一键清除全部</button>
+      <span id="clear-result" style="color:var(--turquoise); font-size:14px;"></span>
+    </div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>快捷操作</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">仅清除测试相关数据，保留爬取的 Excel 和浏览器会话。</p>
+  <button type="button" class="btn btn-warning" onclick="clearTestData()">仅清除测试数据（告警历史+发送日志+收件人缓存+数据快照+报表）</button>
+</div>
+
+<script>
+function getSelected() {
+  return Array.from(document.querySelectorAll('input[name=targets]:checked')).map(cb => cb.value);
+}
+
+function doClear(targets) {
+  if (targets.length === 0) {
+    alert('请至少选择一项要清除的数据');
+    return;
+  }
+  if (!confirm('确认清除？此操作不可恢复！')) return;
+
+  fetch('/api/clear-cache', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({targets: targets})
+  }).then(r => r.json()).then(d => {
+    document.getElementById('clear-result').textContent = '已清除: ' + d.cleared.join(', ');
+  });
+}
+
+function clearSelected() { doClear(getSelected()); }
+
+function clearAll() {
+  document.querySelectorAll('input[name=targets]').forEach(cb => cb.checked = true);
+  doClear(getSelected());
+}
+
+function clearTestData() {
+  const testTargets = ['alert_history', 'followup_log', 'recipients_cache', 'repair_orders', 'reports', 'run_manifest'];
+  document.querySelectorAll('input[name=targets]').forEach(cb => {
+    cb.checked = testTargets.includes(cb.value);
+  });
+  doClear(testTargets);
+}
+</script>
+{% endblock %}

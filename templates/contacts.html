@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}门店联系人 — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">门店联系人</h2>
+
+<div class="card">
+  <h2>上传新 list.xlsx</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">上传新的 list.xlsx 会自动备份旧文件并替换。门店编码→区域→督导→提醒人1~4 从此表读取。</p>
+  <form method="post" action="/contacts/upload" enctype="multipart/form-data">
+    <input type="file" name="file" accept=".xlsx" required>
+    <button type="submit" class="btn btn-primary btn-sm">上传替换</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>门店列表（{{ store_list | length }} 家）</h2>
+  <p style="color:var(--gray); margin-bottom:8px;">联系人信息来自 list.xlsx，直接更新该表即可。</p>
+  <table>
+    <thead>
+      <tr><th>门店编码</th><th>门店名称</th><th>区域</th><th>督导</th><th>督导电话</th><th>提醒人电话1~4</th></tr>
+    </thead>
+    <tbody>
+    {% for s in store_list %}
+    <tr>
+      <td>{{ s.code }}</td>
+      <td>{{ s.name }}</td>
+      <td>{{ s.region }}</td>
+      <td>{{ s.supervisor }}</td>
+      <td>{{ s.sup_phone }}</td>
+      <td>{{ s.remind_phones | join(', ') }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card">
+  <h2>全国收件人</h2>
+  <table>
+    <thead><tr><th>角色</th><th>手机号</th></tr></thead>
+    <tbody>
+    {% for key, phone in national.items() %}
+    <tr><td>{{ key }}</td><td>{{ phone }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

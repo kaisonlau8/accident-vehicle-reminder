@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}报表下载 — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">报表下载</h2>
+
+{% if not reports %}
+<div class="card">
+  <p>暂无生成的报表文件。</p>
+  <a href="/trigger" class="btn btn-primary">前往手动触发生成报表</a>
+</div>
+{% else %}
+<div class="card">
+  <table>
+    <thead>
+      <tr><th>文件名</th><th>类型</th><th>大小</th><th>生成时间</th><th>操作</th></tr>
+    </thead>
+    <tbody>
+    {% for r in reports %}
+    <tr>
+      <td>{{ r.name }}</td>
+      <td>
+        {% if r.name.startswith('national') %}
+          <span class="badge badge-red">全国</span>
+        {% elif r.name.startswith('region') %}
+          <span class="badge badge-orange">区域</span>
+        {% elif r.name.startswith('store') %}
+          <span class="badge badge-yellow">门店</span>
+        {% else %}
+          <span class="badge badge-blue">其他</span>
+        {% endif %}
+      </td>
+      <td>{{ r.size_kb }} KB</td>
+      <td>{{ r.modified }}</td>
+      <td>
+        <a href="/reports/download/{{ r.name }}" class="btn btn-primary btn-sm">下载</a>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

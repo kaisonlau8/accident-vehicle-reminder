@@ -1,0 +1,95 @@
+{
+  "rules": [
+    {
+      "id": 1,
+      "name": "事故车超期告警",
+      "description": "≥7天未完工的事故车每日分级告警，7天黄色/10天橙色/14天红色",
+      "levels": [
+        {
+          "threshold": 7,
+          "label": "7天超期",
+          "color": "yellow",
+          "icon": "⚠️"
+        },
+        {
+          "threshold": 10,
+          "label": "10天超期",
+          "color": "orange",
+          "icon": "🚨"
+        },
+        {
+          "threshold": 14,
+          "label": "14天超期",
+          "color": "red",
+          "icon": "🔴"
+        }
+      ],
+      "trigger": "daily",
+      "trigger_time": "10:00",
+      "recipients": [
+        "remind_all"
+      ],
+      "msg_type": "card+file",
+      "enabled": true
+    },
+    {
+      "id": 2,
+      "name": "已作废工单排除",
+      "description": "当前节点为'已作废'的工单不纳入告警、统计和报表",
+      "filter": "exclude_voided",
+      "condition": "current_stage == '已作废'",
+      "action": "skip",
+      "enabled": true,
+      "recipients": []
+    },
+    {
+      "id": 3,
+      "name": "门店每日报表",
+      "description": "每天17点向门店服务经理发送本店事故维修未完工汇总",
+      "trigger": "daily",
+      "trigger_times": [
+        "10:00",
+        "17:00"
+      ],
+      "scope": "store",
+      "recipients": [
+        "store_service_manager"
+      ],
+      "report_type": "store_summary",
+      "msg_type": "card"
+    },
+    {
+      "id": 4,
+      "name": "区域每日报表",
+      "description": "每天17点向区域服务督导发送区域内事故维修超期汇总",
+      "trigger": "daily",
+      "trigger_times": [
+        "10:00",
+        "17:00"
+      ],
+      "scope": "region",
+      "recipients": [
+        "supervisor",
+        "zhuang_shuai",
+        "yang_yongchang"
+      ],
+      "report_type": "region_summary",
+      "msg_type": "card+file"
+    },
+    {
+      "id": 5,
+      "name": "全国每日报表",
+      "description": "每天17点发送全国事故维修超期汇总及KPI完成率",
+      "trigger": "daily",
+      "trigger_time": "17:00",
+      "scope": "national",
+      "recipients": [
+        "supervisor",
+        "zhuang_shuai",
+        "yang_yongchang"
+      ],
+      "report_type": "national_summary",
+      "msg_type": "file"
+    }
+  ]
+}

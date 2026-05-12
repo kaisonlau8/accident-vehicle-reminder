@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}规则管理 — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">规则管理</h2>
+
+{% for rule in rules %}
+<div class="card {% if rule.id == 1 %}{% elif rule.id == 2 %}{% elif rule.id == 3 %}alert-yellow{% elif rule.id == 4 %}alert-orange{% elif rule.id == 5 %}alert-red{% endif %}">
+  <h2>
+    Rule {{ rule.id }}: {{ rule.name }}
+    {% if rule.get('enabled', true) %}
+      <span class="badge badge-green">启用</span>
+    {% else %}
+      <span class="badge badge-red">禁用</span>
+    {% endif %}
+  </h2>
+  <p style="color:var(--gray);">{{ rule.description }}</p>
+
+  <table style="margin-top:8px;">
+    <tr><td style="width:120px;">触发</td><td>{{ rule.get('trigger', '') }} {% if rule.get('trigger_time') %}@ {{ rule.trigger_time }}{% endif %}{% if rule.get('trigger_times') %}@ {{ rule.trigger_times | join(', ') }}{% endif %}</td></tr>
+    <tr><td>收件人</td><td>{{ rule.get('recipients', []) | join(', ') }}</td></tr>
+    <tr><td>消息类型</td><td>{{ rule.get('msg_type', '') }}</td></tr>
+    {% if rule.levels %}
+    <tr><td>分级</td>
+      <td>
+        {% for lv in rule.levels %}
+        <span class="badge badge-{{ lv.color }}">{{ lv.icon }} {{ lv.label }}（≥{{ lv.threshold }}天）</span>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endif %}
+    {% if rule.condition %}
+    <tr><td>过滤条件</td><td>{{ rule.condition }} → {{ rule.action }}</td></tr>
+    {% endif %}
+  </table>
+
+  <div style="margin-top:8px;">
+    <a href="/rules/edit/{{ rule.id }}" class="btn btn-outline btn-sm">编辑</a>
+  </div>
+</div>
+{% endfor %}
+{% endblock %}

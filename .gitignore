@@ -1,0 +1,46 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment & secrets
+.env
+.env.local
+
+# Runtime data (auto-generated)
+data/repair_orders/
+data/reports/
+data/followup/
+data/run_manifest.json
+
+# Config cache (auto-generated from list.xlsx)
+config/recipients.json
+
+# Browser profile & state
+.browser-profile/
+.runtime/
+
+# Crawled & downloaded files (auto-generated)
+output/
+downloads/
+recordings/
+
+# Business data — contains real contact info, DO NOT commit
+list.xlsx
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code
+.claude/
+
+# Logs
+*.log

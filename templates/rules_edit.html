@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}编辑 Rule {{ rule_id }} — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">编辑 Rule {{ rule_id }}</h2>
+
+<form method="post" action="/rules/edit/{{ rule_id }}">
+<div class="card">
+  <div class="form-group">
+    <label>规则名称</label>
+    <input type="text" name="name" value="{{ rule.name }}">
+  </div>
+  <div class="form-group">
+    <label>描述</label>
+    <textarea name="description">{{ rule.description }}</textarea>
+  </div>
+  <div class="form-group">
+    <label>启用</label>
+    <select name="enabled">
+      <option value="true" {% if rule.get('enabled', true) %}selected{% endif %}>启用</option>
+      <option value="false" {% if not rule.get('enabled', true) %}selected{% endif %}>禁用</option>
+    </select>
+  </div>
+
+  {% if rule.levels %}
+  <div class="form-group">
+    <label>分级阈值（天数）</label>
+    {% for lv in rule.levels %}
+    <div class="form-row" style="margin-bottom:8px;">
+      <div>
+        <span class="badge badge-{{ lv.color }}">{{ lv.icon }} {{ lv.label }}</span>
+      </div>
+      <div>
+        <input type="number" name="level_{{ loop.index0 }}_threshold" value="{{ lv.threshold }}" min="1" max="60" style="width:80px;">
+        天
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if 'trigger_time' in rule %}
+  <div class="form-group">
+    <label>触发时间</label>
+    <input type="text" name="trigger_time" value="{{ rule.trigger_time }}" placeholder="如 17:00">
+  </div>
+  {% endif %}
+
+  {% if 'trigger_times' in rule %}
+  <div class="form-group">
+    <label>触发时间（逗号分隔）</label>
+    <input type="text" name="trigger_times" value="{{ rule.trigger_times | join(', ') }}" placeholder="如 10:00, 17:00">
+  </div>
+  {% endif %}
+
+  <div class="form-group">
+    <label>收件人角色（逗号分隔）</label>
+    <input type="text" name="recipients" value="{{ rule.recipients | join(', ') }}" placeholder="如 remind_all, supervisor">
+  </div>
+
+  <div style="display:flex; gap:8px;">
+    <button type="submit" class="btn btn-primary">保存</button>
+    <a href="/rules" class="btn btn-outline">取消</a>
+  </div>
+</div>
+</form>
+{% endblock %}

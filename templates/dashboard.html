@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}仪表盘 — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">系统状态概览</h2>
+
+<div class="grid">
+  <div class="stat">
+    <div class="num">
+      {% if mode == 'scheduled' %}定时等候{% elif mode == 'test' %}测试{% elif mode == 'prod' %}正式{% else %}空闲{% endif %}
+    </div>
+    <div class="label">运行模式</div>
+  </div>
+  <div class="stat">
+    <div class="num" id="browser-status" style="color:{% if browser_ok %}var(--turquoise){% else %}var(--red){% endif %};">
+      {% if browser_ok %}在线{% else %}离线{% endif %}
+    </div>
+    <div class="label">浏览器会话</div>
+  </div>
+  <div class="stat">
+    <div class="num">{{ snap_info.get('date', '无') }}</div>
+    <div class="label">最新数据日期</div>
+  </div>
+  <div class="stat">
+    <div class="num">{{ history_info.get('vin_count', 0) }}</div>
+    <div class="label">告警跟踪VIN数</div>
+  </div>
+  <div class="stat">
+    <div class="num">{{ history_info.get('total_alerts', 0) }}</div>
+    <div class="label">累计提醒次数</div>
+  </div>
+  <div class="stat">
+    <div class="num {% if task_status.running %}running{% endif %}"
+         style="color:{% if task_status.running %}var(--orange){% else %}var(--turquoise){% endif %};">
+      {% if task_status.running %}执行中{% elif task_status.result %}已完成{% else %}空闲{% endif %}
+    </div>
+    <div class="label">任务状态</div>
+  </div>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--blue);">
+  <h2>浏览器管理</h2>
+  <div id="browser-detail" style="margin-bottom:12px;">
+    {% if browser %}
+    <table style="width:auto;">
+      <tr><td style="width:100px;">浏览器</td><td>{{ Path(browser.browserExecutable).stem }}</td></tr>
+      <tr><td>PID</td><td>{{ browser.pid }}</td></tr>
+      <tr><td>CDP端口</td><td>{{ browser.port }}</td></tr>
+      <tr><td>启动时间</td><td>{{ browser.startedAt }}</td></tr>
+      <tr><td>状态</td><td><span class="badge {% if browser_ok %}badge-green{% else %}badge-red{% endif %}">{% if browser_ok %}在线{% else %}离线{% endif %}</span></td></tr>
+    </table>
+    {% else %}
+    <p style="color:var(--gray);">尚未连接浏览器，请选择浏览器并启动登录。</p>
+    {% endif %}
+  </div>
+
+  <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+    <label style="font-size:14px;">选择浏览器:</label>
+    <select id="browser-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
+      {% for b in available_browsers %}
+      {% if b.available %}
+      <option value="{{ b.name }}">{{ b.label }} ✓</option>
+      {% else %}
+      <option value="{{ b.name }}" disabled>{{ b.label }} ✗（未安装）</option>
+      {% endif %}
+      {% endfor %}
+    </select>
+    <button onclick="launchBrowser()" class="btn btn-primary btn-sm">启动登录</button>
+    {% if browser %}
+    <button onclick="disconnectBrowser()" class="btn btn-outline btn-sm">断开连接</button>
+    {% endif %}
+  </div>
+
+  {% if not browser_ok and browser %}
+  <p style="color:var(--red); font-size:13px;">浏览器进程已退出，请重新启动登录。</p>
+  {% elif browser_ok %}
+  <p style="color:var(--turquoise); font-size:13px;">浏览器在线，可以执行爬取任务。登录后请在 DMS 中确认会话有效。</p>
+  {% endif %}
+</div>
+
+{% if task_status.running %}
+<div class="card" style="border-left: 4px solid var(--orange);">
+  <h2>当前任务: {{ task_status.task }}</h2>
+  <p style="color:var(--gray);">开始时间: {{ task_status.started_at }}</p>
+  <div class="log-box" id="log-output">{{ task_status.log_lines | join('\n') }}</div>
+  <p style="margin-top:8px;">
+    <a href="/trigger" class="btn btn-outline btn-sm">查看详情</a>
+  </p>
+</div>
+{% endif %}
+
+<div id="scheduler-status-card"></div>
+
+<script>
+// 定时等候状态
+fetch('/api/status').then(r => r.json()).then(d => {
+  if (d.mode === 'scheduled') {
+    document.getElementById('scheduler-status-card').innerHTML =
+      '<div class="card" style="border-left: 4px solid var(--turquoise); background: #e8f8ee;">' +
+      '<h2>定时等候模式运行中</h2>' +
+      '<p style="color:var(--gray);">下一次触发: ' + (d.next_fire || '计算中...') + '</p>' +
+      '<p style="color:var(--gray); font-size:13px;">10:00 告警+报表 | 17:00 全报表</p>' +
+      '<a href="/mode" class="btn btn-danger btn-sm">停止</a>' +
+      '</div>';
+  }
+});
+
+// 启动浏览器
+function launchBrowser() {
+  var browser = document.getElementById('browser-select').value;
+  fetch('/api/browser/launch', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({browser: browser})
+  }).then(r => r.json()).then(d => {
+    if (d.launched) {
+      alert(d.message + '\n\n浏览器: ' + d.browser + '\nPID: ' + d.pid + '\n端口: ' + d.port);
+      location.reload();
+    } else {
+      alert('启动失败: ' + (d.error || '未知错误'));
+    }
+  });
+}
+
+// 断开浏览器
+function disconnectBrowser() {
+  if (!confirm('确认断开浏览器连接？需要重新启动登录才能爬取数据。')) return;
+  fetch('/api/browser/disconnect', {method: 'POST'}).then(r => r.json()).then(d => {
+    location.reload();
+  });
+}
+</script>
+
+{% if snap_info %}
+<div class="card">
+  <h2>数据快照 <span class="badge badge-blue">{{ snap_info.file }}</span></h2>
+  <div class="grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="stat"><div class="num">{{ snap_info.total_records }}</div><div class="label">总记录数</div></div>
+    <div class="stat"><div class="num">{{ snap_info.accident_records }}</div><div class="label">事故车数</div></div>
+    <div class="stat"><div class="num">{{ snap_info.regions }}</div><div class="label">区域数</div></div>
+    <div class="stat"><div class="num">{{ snap_info.stores }}</div><div class="label">门店数</div></div>
+  </div>
+</div>
+{% endif %}
+
+{% if recent_logs %}
+<div class="card">
+  <h2>最近发送记录</h2>
+  <table>
+    <thead><tr><th>时间</th><th>规则</th><th>VIN/门店</th><th>手机号</th><th>状态</th></tr></thead>
+    <tbody>
+    {% for log in recent_logs %}
+    <tr>
+      <td>{{ log.ts }}</td>
+      <td>Rule {{ log.rule }}</td>
+      <td>{{ log.get('vin', log.get('store_code', log.get('region', ''))) }}</td>
+      <td>{{ log.phone }}</td>
+      <td><span class="badge {% if log.status == 'sent' %}badge-green{% else %}badge-red{% endif %}">{{ log.status }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div style="display:flex; gap:8px;">
+  <a href="/mode" class="btn btn-primary">切换模式</a>
+  <a href="/trigger" class="btn btn-outline">手动触发任务</a>
+  <a href="/data" class="btn btn-outline">查看数据</a>
+</div>
+{% endblock %}

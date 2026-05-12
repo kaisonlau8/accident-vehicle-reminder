@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}模式切换 — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">运行模式切换</h2>
+
+<p style="margin-bottom:16px;">当前模式:
+  {% if mode == 'test' %}
+    <span class="mode-indicator mode-test">测试模式</span>
+  {% elif mode == 'scheduled' %}
+    <span class="mode-indicator mode-prod">定时等候</span>
+  {% elif mode == 'prod' %}
+    <span class="mode-indicator mode-prod">正式模式</span>
+  {% else %}
+    <span class="mode-indicator mode-idle">未启动</span>
+  {% endif %}
+</p>
+
+{% if mode == 'scheduled' %}
+<div class="card" style="border-left: 4px solid var(--turquoise); background: #e8f8ee;">
+  <h2>定时等候模式运行中</h2>
+  <p style="margin-bottom:8px;">调度器已启动，等待 10:00 和 17:00 自动触发任务。</p>
+  <p style="color:var(--gray);" id="next-fire-info">下一次触发: 加载中...</p>
+  <form method="post" action="/mode">
+    <input type="hidden" name="action" value="stop">
+    <button type="submit" class="btn btn-danger">停止定时等候</button>
+  </form>
+</div>
+
+<script>
+setInterval(function() {
+  fetch('/api/status').then(r => r.json()).then(d => {
+    document.getElementById('next-fire-info').textContent = '下一次触发: ' + (d.next_fire || '计算中...');
+  });
+}, 5000);
+</script>
+{% endif %}
+
+<div class="card" style="border-left: 4px solid var(--blue);">
+  <h2>定时等候模式</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">启动后台调度器，等到 10:00 自动执行告警+门店/区域报表，17:00 自动执行全报表。不会立即发送，按时间自动触发，常驻运行。</p>
+  <form method="post" action="/mode">
+    <input type="hidden" name="action" value="scheduled">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="checkbox">
+          <input type="checkbox" name="skip_crawl"> 跳过爬取（每次触发使用最新快照）
+        </label>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">启动定时等候</button>
+  </form>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--yellow);">
+  <h2>测试模式（立即执行）</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">所有消息（告警+报表+Excel）发给指定测试手机号，跑完 10:00+17:00 全部规则后退出。</p>
+  <form method="post" action="/mode">
+    <input type="hidden" name="action" value="test">
+    <div class="form-row">
+      <div class="form-group">
+        <label>测试手机号</label>
+        <input type="text" name="test_phone" value="" placeholder="输入测试手机号">
+      </div>
+      <div class="form-group">
+        <label class="checkbox">
+          <input type="checkbox" name="skip_crawl"> 跳过爬取（使用最新快照）
+        </label>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-warning">立即执行测试</button>
+  </form>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--turquoise);">
+  <h2>正式模式 — 10:00 任务（立即执行）</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">爬取+导入+超期告警+门店/区域报表，按规则通知对应收件人。</p>
+  <form method="post" action="/mode">
+    <input type="hidden" name="action" value="morning">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="checkbox">
+          <input type="checkbox" name="skip_crawl"> 跳过爬取（使用最新快照）
+        </label>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-success">立即执行</button>
+  </form>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--turquoise);">
+  <h2>正式模式 — 17:00 报表（立即执行）</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">爬取+导入+门店/区域报表+全国报表+KPI，按规则通知对应收件人。</p>
+  <form method="post" action="/mode">
+    <input type="hidden" name="action" value="evening">
+    <div class="form-row">
+      <div class="form-group">
+        <label class="checkbox">
+          <input type="checkbox" name="skip_crawl"> 跳过爬取（使用最新快照）
+        </label>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-success">立即执行</button>
+  </form>
+</div>
+
+{% if mode != 'idle' and mode != 'scheduled' %}
+<div class="card" style="border-left: 4px solid var(--gray);">
+  <h2>重置模式</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">将模式设为"未启动"，不中断正在执行的后台任务。</p>
+  <form method="post" action="/mode">
+    <input type="hidden" name="action" value="stop">
+    <button type="submit" class="btn btn-outline">重置为未启动</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

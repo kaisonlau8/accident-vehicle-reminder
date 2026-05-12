@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+{% block title %}手动触发 — 事故车提醒系统{% endblock %}
+{% block content %}
+<h2 style="font-size:20px; margin-bottom:16px;">手动触发任务</h2>
+
+{% if task_status.running %}
+<div class="card" style="border-left: 4px solid var(--orange);">
+  <h2>正在执行: {{ task_status.task }} <span class="badge badge-orange running">运行中</span></h2>
+  <p style="color:var(--gray);">开始时间: {{ task_status.started_at }}</p>
+  <div class="log-box" id="log-output">{{ task_status.log_lines | join('\n') }}</div>
+</div>
+
+<script>
+setInterval(function() {
+  fetch('/api/status').then(r => r.json()).then(d => {
+    if (d.task_running) {
+      document.getElementById('log-output').textContent = d.task_log_tail.join('\n');
+    } else {
+      location.reload();
+    }
+  });
+}, 3000);
+</script>
+{% elif task_status.result %}
+<div class="card" style="border-left: 4px solid var(--turquoise);">
+  <h2>任务已完成: {{ task_status.task }}</h2>
+  {% if task_status.result.error %}
+  <p style="color:var(--red);">错误: {{ task_status.result.error }}</p>
+  {% endif %}
+  <div class="log-box">{{ task_status.log_lines | join('\n') }}</div>
+</div>
+{% endif %}
+
+<div class="card" style="border-left: 4px solid var(--blue);">
+  <h2>爬取 DMS 数据</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">启动浏览器爬取维修工单，然后自动导入生成 JSON 快照。需要浏览器会话在线。</p>
+  <button onclick="fetch('/api/crawl',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.started)location.reload();})" class="btn btn-primary">
+    爬取数据
+  </button>
+</div>
+
+{% if xlsx_files %}
+<div class="card" style="border-left: 4px solid var(--turquoise);">
+  <h2>导入已有 Excel</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">选择 output/ 中已爬取的 Excel 文件，直接导入生成 JSON 快照。</p>
+  <table>
+    <thead><tr><th>文件名</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for f in xlsx_files %}
+    <tr>
+      <td>{{ f.name }}</td>
+      <td>{{ f.size_kb }} KB</td>
+      <td>{{ f.modified }}</td>
+      <td>
+        <button onclick="fetch('/api/import-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:'{{ f.name }}'})}).then(r=>r.json()).then(d=>{if(d.started)location.reload();})" class="btn btn-success btn-sm">导入</button>
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="card" style="border-left: 4px solid var(--yellow);">
+  <h2>执行 10:00 任务（测试模式）</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">使用最新快照数据，所有消息发给指定测试手机号。</p>
+  <div class="form-row">
+    <div class="form-group">
+      <label>测试手机号</label>
+      <input type="text" id="test-phone" placeholder="输入测试手机号">
+    </div>
+    <div class="form-group">
+      <label class="checkbox"><input type="checkbox" id="skip-crawl-test"> 跳过爬取</label>
+    </div>
+  </div>
+  <button onclick="runTest()" class="btn btn-warning">执行测试</button>
+</div>
+
+<div class="card" style="border-left: 4px solid var(--turquoise);">
+  <h2>执行正式任务</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">按规则通知对应收件人，不替换手机号。</p>
+  <div style="display:flex; gap:8px; align-items:center;">
+    <label class="checkbox"><input type="checkbox" id="skip-crawl-formal"> 跳过爬取</label>
+    <button onclick="runMorning()" class="btn btn-success">10:00 告警+报表</button>
+    <button onclick="runEvening()" class="btn btn-success">17:00 全报表</button>
+  </div>
+</div>
+
+<script>
+function runTest() {
+  fetch('/api/run-test', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({test_phone: document.getElementById('test-phone').value, skip_crawl: document.getElementById('skip-crawl-test').checked})
+  }).then(r=>r.json()).then(d=>{if(d.started)location.reload();});
+}
+function runMorning() {
+  fetch('/api/run-morning', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({skip_crawl: document.getElementById('skip-crawl-formal').checked})
+  }).then(r=>r.json()).then(d=>{if(d.started)location.reload();});
+}
+function runEvening() {
+  fetch('/api/run-evening', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({skip_crawl: document.getElementById('skip-crawl-formal').checked})
+  }).then(r=>r.json()).then(d=>{if(d.started)location.reload();});
+}
+</script>
+{% endblock %}

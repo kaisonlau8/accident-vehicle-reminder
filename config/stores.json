@@ -1,0 +1,9 @@
+{
+  "version": "template",
+  "stores": {},
+  "regions": {},
+  "national_recipients": {
+    "zhuang_shuai": "<手机号>",
+    "yang_yongchang": "<手机号>"
+  }
+}
