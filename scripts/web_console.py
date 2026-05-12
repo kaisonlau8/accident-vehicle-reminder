@@ -12,6 +12,9 @@ import io
 from datetime import date, datetime
 from pathlib import Path
 
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+
 from flask import (
     Flask, render_template, request, redirect, url_for,
     jsonify, send_from_directory, send_file,

@@ -8,6 +8,7 @@
 """
 
 import json
+import os
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
@@ -82,7 +83,7 @@ def load_stores_config() -> dict:
             supervisors_seen.setdefault(sup_name, {"name": sup_name, "phone": sup_phone})
             regions[region_name] = {"name": region_name, "supervisor": supervisors_seen[sup_name]}
 
-    # national_recipients 从 stores.json 读取（庄帅+杨永昌不在list.xlsx中）
+    # national_recipients: 优先从 .env 读取，其次从 stores.json 读取
     nr = {}
     stores_json_path = CONFIG_DIR / "stores.json"
     if stores_json_path.exists():
@@ -91,6 +92,16 @@ def load_stores_config() -> dict:
             nr = legacy.get("national_recipients", {})
             if isinstance(nr, list):
                 nr = {}
+
+    # .env 中的真实手机号覆盖 stores.json 占位符
+    _env_nr = {
+        "zhuang_shuai": os.getenv("RECIPIENT_ZHUANG_SHUAI", ""),
+        "yang_yongchang": os.getenv("RECIPIENT_YANG_YONGCHANG", ""),
+    }
+    for key, val in _env_nr.items():
+        val = val.replace("+86-", "").replace("+86", "")
+        if val:
+            nr[key] = val
 
     return {"stores": stores, "regions": regions, "national_recipients": nr}
 
