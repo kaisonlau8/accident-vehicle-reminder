@@ -42,10 +42,10 @@
   <div id="browser-detail" style="margin-bottom:12px;">
     {% if browser %}
     <table style="width:auto;">
-      <tr><td style="width:100px;">浏览器</td><td>{{ Path(browser.browserExecutable).stem }}</td></tr>
+      <tr><td style="width:100px;">浏览器</td><td>{{ Path(browser.browserExecutable).stem if browser.browserExecutable else '未知' }}</td></tr>
       <tr><td>PID</td><td>{{ browser.pid }}</td></tr>
       <tr><td>CDP端口</td><td>{{ browser.port }}</td></tr>
-      <tr><td>启动时间</td><td>{{ browser.startedAt }}</td></tr>
+      <tr><td>启动时间</td><td>{{ browser.startedAt or '未知' }}</td></tr>
       <tr><td>状态</td><td><span class="badge {% if browser_ok %}badge-green{% else %}badge-red{% endif %}">{% if browser_ok %}在线{% else %}离线{% endif %}</span></td></tr>
     </table>
     {% else %}
@@ -71,7 +71,7 @@
   </div>
 
   {% if not browser_ok and browser %}
-  <p style="color:var(--red); font-size:13px;">浏览器进程已退出，请重新启动登录。</p>
+  <p style="color:var(--orange); font-size:13px;">浏览器在运行但 DMS 页面未打开，点击"启动登录"重新打开 DMS 页面。</p>
   {% elif browser_ok %}
   <p style="color:var(--turquoise); font-size:13px;">浏览器在线，可以执行爬取任务。登录后请在 DMS 中确认会话有效。</p>
   {% endif %}
@@ -115,6 +115,9 @@ function launchBrowser() {
     if (d.launched) {
       alert(d.message + '\n\n浏览器: ' + d.browser + '\nPID: ' + d.pid + '\n端口: ' + d.port);
       location.reload();
+    } else if (d.reused) {
+      alert(d.message || '浏览器已在运行，直接使用当前会话');
+      location.reload();
     } else {
       alert('启动失败: ' + (d.error || '未知错误'));
     }
@@ -141,6 +144,13 @@ function disconnectBrowser() {
   </div>
 </div>
 {% endif %}
+
+<div class="card" style="border-left: 4px solid var(--turquoise);">
+  <h2>全国报表 / KPI 口径</h2>
+  <p style="color:var(--gray); margin-bottom:8px;">30天内事故工单7天完工率 = 7天内完工事故车辆数 / 全部事故工单数 * 100%</p>
+  <p style="color:var(--gray); margin-bottom:8px;">30天内事故工单10天完工率 = 10天内完工事故车辆数 / 全部事故工单数 * 100%</p>
+  <p style="color:var(--gray); margin-bottom:0;">工单里不包含作废。</p>
+</div>
 
 {% if recent_logs %}
 <div class="card">

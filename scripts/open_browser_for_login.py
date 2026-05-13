@@ -124,7 +124,11 @@ def ensure_browser_page(port: int, target_url: str) -> None:
 
     try:
         encoded_url = urllib.parse.quote(target_url, safe="")
-        urllib.request.urlopen(f"http://127.0.0.1:{port}/json/new?{encoded_url}", timeout=3).read()
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/json/new?{encoded_url}",
+            method="PUT",
+        )
+        urllib.request.urlopen(req, timeout=3).read()
     except Exception:
         pass
 

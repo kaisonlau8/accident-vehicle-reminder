@@ -1,4 +1,4 @@
-"""手动 DMS Excel 导入 → 标准化 repair_orders JSON。
+"""DMS Excel 导入 → 标准化 repair_orders JSON。
 
 DMS 导出的"维修工单总部查询"Excel 包含 4 个 Sheet：
 - 维修工单（主表）：24 列，含门店/区域/状态/时间/VIN 等
@@ -6,7 +6,8 @@ DMS 导出的"维修工单总部查询"Excel 包含 4 个 Sheet：
 - 工单备件：配件明细
 - 工单其他项目：其他费用
 
-本脚本只提取"维修工单"Sheet，筛选事故车相关记录，标准化输出。
+本项目的 DMS 爬虫在导出前已将业务类型固定为“事故维修”，因此这里直接
+提取"维修工单"Sheet 并标准化输出，不再做事故车二次验证或过滤。
 """
 
 import argparse
@@ -16,32 +17,12 @@ from datetime import datetime, date, timedelta
 from pathlib import Path
 
 import openpyxl
+from time_utils import beijing_today, beijing_iso
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "repair_orders"
 
-# 维修状态中文 → 标准阶段映射
-STATUS_TO_STAGE = {
-    "待派工": "待派工",
-    "待维修": "待维修",
-    "维修中": "维修中",
-    "质检": "质检",
-    "结算申请": "结算",
-    "结算": "结算",
-    "收款": "交车",
-}
-
-# 事故车相关维修类型关键词（在"工单工时"Sheet 的"维修类型"列中出现）
-ACCIDENT_KEYWORDS = ["事故", "钣喷", "钣金", "喷漆", "保险"]
-
-
-def _parse_datetime(val) -> str | None:
-    if val is None:
-        return None
-    if isinstance(val, datetime):
-        return val.strftime("%Y-%m-%d %H:%M:%S")
-    if isinstance(val, date):
-        return val.strftime("%Y-%m-%d")
-    return str(val).strip() or None
+IN_PROGRESS_STATUSES = {"待派工", "接车", "维修中"}
+CANCELLED_STATUSES = {"已作废"}
 
 
 def _parse_date_only(val) -> str | None:
@@ -63,30 +44,37 @@ def _days_between(date_str1: str, date_str2: str) -> int:
         return -1
 
 
-def _is_qc_completed(row: dict) -> bool:
-    """根据维修状态判断是否已过质检节点。"""
-    stage = STATUS_TO_STAGE.get(row.get("维修状态", ""), "")
-    return stage in ("质检", "结算", "交车")
+def _is_cancelled_status(status: str) -> bool:
+    return status in CANCELLED_STATUSES
 
 
-def _is_accident_repair(work_order_no: str, labor_sheet) -> bool:
-    """在工单工时 Sheet 中查找该工单是否包含事故相关维修类型。"""
-    for labor_row in labor_sheet.iter_rows(min_row=2, values_only=True):
-        if labor_row[0] == work_order_no:
-            repair_type = str(labor_row[4] or "")
-            if any(kw in repair_type for kw in ACCIDENT_KEYWORDS):
-                return True
-    return False
+def _is_in_progress_status(status: str) -> bool:
+    return status in IN_PROGRESS_STATUSES
 
 
-def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
+def _normalize_current_stage(status: str) -> str:
+    """标准化当前阶段。
+
+    规则：
+    - 待派工 / 接车 / 维修中 -> 视为维修中状态，保留原状态名
+    - 已作废 -> 已作废（理论上会在导入前被过滤）
+    - 其他所有状态 -> 维修完成
+    """
+    if _is_cancelled_status(status):
+        return "已作废"
+    if _is_in_progress_status(status):
+        return status
+    return "维修完成"
+
+
+def _is_qc_completed(status: str) -> bool:
+    """判断是否已完成维修。"""
+    return not _is_in_progress_status(status)
+
+
+def import_excel(xlsx_path: str) -> dict:
     """导入 DMS 维修工单 Excel，返回标准 JSON。"""
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
-
-    # 读取工单工时 Sheet（用于判断事故车）
-    labor_sheet = None
-    if "工单工时" in wb.sheetnames and filter_accident:
-        labor_sheet = wb["工单工时"]
 
     # 读取维修工单主表
     main_sheet = wb["维修工单"] if "维修工单" in wb.sheetnames else wb[wb.sheetnames[0]]
@@ -95,10 +83,8 @@ def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
     headers = [str(cell.value or "") for cell in main_sheet[1]]
     col_idx = {h: i for i, h in enumerate(headers)}
 
-    today = date.today().strftime("%Y-%m-%d")
+    today = beijing_today().strftime("%Y-%m-%d")
     records = []
-    accident_count = 0
-    skipped_non_accident = 0
 
     for row in main_sheet.iter_rows(min_row=2, values_only=True):
         row_dict = {h: (row[i] if i < len(row) else None) for h, i in col_idx.items()}
@@ -106,17 +92,13 @@ def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
         if not work_order_no:
             continue
 
-        # 如果需要，过滤事故车
-        if filter_accident and labor_sheet:
-            if not _is_accident_repair(work_order_no, labor_sheet):
-                skipped_non_accident += 1
-                continue
-            accident_count += 1
-
         entry_date = _parse_date_only(row_dict.get("到店时间"))
         days_in_shop = _days_between(entry_date, today) if entry_date else -1
         status = str(row_dict.get("维修状态", "") or "").strip()
-        current_stage = STATUS_TO_STAGE.get(status, status)
+        if _is_cancelled_status(status):
+            continue
+
+        current_stage = _normalize_current_stage(status)
 
         record = {
             "repair_order_no": work_order_no,
@@ -136,7 +118,7 @@ def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
             "vin": str(row_dict.get("VIN码", "") or "").strip(),
             "vehicle_model": str(row_dict.get("车系名称", "") or "").strip(),
             "days_in_shop": days_in_shop,
-            "is_qc_completed": _is_qc_completed(row_dict),
+            "is_qc_completed": _is_qc_completed(status),
             "sender_name": str(row_dict.get("送修人", "") or "").strip(),
             "sender_phone": str(row_dict.get("送修人电话", "") or "").strip(),
         }
@@ -148,19 +130,19 @@ def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
         actual_start = min(entry_dates)
         actual_end = max(entry_dates)
     else:
-        actual_start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+        actual_start = (beijing_today() - timedelta(days=30)).strftime("%Y-%m-%d")
         actual_end = today
 
     result = {
         "snapshot_date": today,
         "snapshot_start": actual_start,
         "snapshot_end": actual_end,
-        "source": "manual_excel",
+        "source": "dms_excel",
         "source_file": Path(xlsx_path).name,
-        "generated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
+        "generated_at": beijing_iso(),
         "total_records": len(records),
-        "accident_records": accident_count if filter_accident else None,
-        "skipped_non_accident": skipped_non_accident if filter_accident else None,
+        "accident_records": len(records),
+        "skipped_non_accident": 0,
         "records": records,
     }
 
@@ -177,28 +159,16 @@ def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
         json.dump(result, f, ensure_ascii=False, indent=2, default=str)
 
     print(f"导入完成: {len(records)} 条记录")
-    if filter_accident:
-        print(f"  事故车: {accident_count} 条 | 跳过非事故: {skipped_non_accident} 条")
+    print(f"  事故车: {len(records)} 条 | 跳过非事故: 0 条")
     print(f"  输出: {output_path}")
     return result
-
-
-def import_all_types(xlsx_path: str) -> dict:
-    """不过滤事故车，导入全部工单。"""
-    return import_excel(xlsx_path, filter_accident=False)
-
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="导入 DMS 维修工单 Excel")
     parser.add_argument("xlsx_path", help="DMS 导出的维修工单 Excel 文件路径")
-    parser.add_argument("--all", action="store_true", help="不过滤事故车，导入全部工单")
     args = parser.parse_args()
 
     if not Path(args.xlsx_path).exists():
         print(f"文件不存在: {args.xlsx_path}")
         sys.exit(1)
 
-    if args.all:
-        import_all_types(args.xlsx_path)
-    else:
-        import_excel(args.xlsx_path)
+    import_excel(args.xlsx_path)

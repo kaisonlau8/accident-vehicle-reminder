@@ -30,34 +30,6 @@ def _log_followup(entry: dict):
     log_path = FOLLOWUP_DIR / "followup_log.jsonl"
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
-
-
-def _resolve_and_send_text(phones: list[str], message: str, rule_id: int, vin: str = "") -> list[dict]:
-    """解析手机号并发送文本消息。"""
-    results = []
-    for phone in phones:
-        open_id = resolve_phone_to_open_id(phone)
-        if not open_id:
-            _log_followup({
-                "ts": time.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
-                "rule": rule_id, "vin": vin, "phone": phone,
-                "status": "failed", "error": "open_id_not_found",
-            })
-            results.append({"phone": phone, "success": False, "error": "open_id_not_found"})
-            continue
-
-        result = send_text_message(open_id, message)
-        success = result is not None
-        _log_followup({
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
-            "rule": rule_id, "vin": vin, "phone": phone, "open_id": open_id,
-            "status": "sent" if success else "failed",
-        })
-        results.append({"phone": phone, "open_id": open_id, "success": success})
-        time.sleep(0.3)  # 限速
-    return results
-
-
 def dispatch_alerts(alerts: list[dict]) -> dict:
     """发送 Rule 1 的分级告警消息（卡片格式，按级别颜色区分）。"""
     total_sent = 0

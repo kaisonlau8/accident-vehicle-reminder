@@ -101,25 +101,114 @@ def connect_browser_over_cdp(playwright: Playwright, port: int, timeout_seconds:
     raise RuntimeError(f"Failed to connect to Chrome over CDP on port {port}: {last_error}")
 
 
+def recover_browser_state(state_file: Path, plugin_root: Path) -> Optional[int]:
+    """Try to recover browser state by scanning for a running CDP-enabled browser.
+
+    Looks for processes matching the project's --user-data-dir and extracts the
+    CDP port from their command line. If found and CDP is responsive, rewrites
+    the state file and returns the port.
+    """
+    import subprocess
+
+    browser_profile_dir = plugin_root / ".browser-profile"
+    try:
+        result = subprocess.run(
+            ["ps", "-eo", "pid=,command="],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+    except Exception:
+        return None
+
+    for line in result.stdout.splitlines():
+        if "--remote-debugging-port=" not in line:
+            continue
+        if str(browser_profile_dir) not in line:
+            continue
+        parts = line.strip().split(None, 1)
+        if len(parts) < 2:
+            continue
+        try:
+            pid = int(parts[0])
+        except ValueError:
+            continue
+
+        cmd = parts[1]
+        import re
+        m = re.search(r"--remote-debugging-port=(\d+)", cmd)
+        if not m:
+            continue
+        port = int(m.group(1))
+
+        if not cdp_is_ready(port):
+            continue
+
+        # Determine browser executable from command line
+        executable = ""
+        for name, path in DEFAULT_BROWSER_CANDIDATES.items():
+            if path in cmd:
+                executable = path
+                break
+
+        # Found a live browser — rebuild state file
+        payload = {
+            "port": port,
+            "pid": pid,
+            "browserExecutable": executable,
+            "browserProfileDir": str(browser_profile_dir),
+            "targetUrl": DEFAULT_TARGET_URL,
+            "startedAt": __import__("datetime").datetime.now(
+                __import__("datetime").timezone.utc
+            ).isoformat().replace("+00:00", "Z"),
+        }
+        write_browser_state(state_file, payload)
+        print(f"  [RECOVERED] Browser state rebuilt: pid={pid}, port={port}")
+        return port
+
+    return None
+
+
 def ensure_cdp_browser_running(state_file: Path) -> int:
     """Read browser state and validate the browser process is alive with CDP ready.
 
+    If the state file is missing or stale, attempts to recover by scanning for
+    a running CDP browser with the project's user-data-dir.
+
     Returns the CDP port. Raises if the browser is not running.
     """
+    # Try to recover from a running browser even if state file is missing/stale
+    plugin_root = state_file.parent.parent  # .runtime/ -> project root
+
     if not state_file.exists():
+        print("  Browser state file not found, attempting recovery...")
+        port = recover_browser_state(state_file, plugin_root)
+        if port:
+            return port
         raise FileNotFoundError(
-            f"No browser state found at {state_file}. "
+            f"No browser state found at {state_file} and no running browser detected. "
             "Start the login browser first: scripts/open_browser_for_login.sh"
         )
+
     payload = read_browser_state(state_file)
     pid = int(payload.get("pid") or 0)
     port = int(payload.get("port") or 0)
     if pid <= 0 or port <= 0:
+        print("  Invalid browser state, attempting recovery...")
+        port = recover_browser_state(state_file, plugin_root)
+        if port:
+            return port
         raise RuntimeError(f"Invalid browser state: pid={pid}, port={port}")
-    if not process_is_running(pid):
-        raise RuntimeError(f"Browser process (pid={pid}) is not running. Restart the login browser.")
-    if not cdp_is_ready(port):
+
+    if not process_is_running(pid) or not cdp_is_ready(port):
+        print("  Browser process/port not responding, attempting recovery...")
+        port = recover_browser_state(state_file, plugin_root)
+        if port:
+            return port
+        if not process_is_running(pid):
+            raise RuntimeError(f"Browser process (pid={pid}) is not running. Restart the login browser.")
         raise RuntimeError(f"CDP port {port} is not responding. Browser may be hung.")
+
     return port
 
 

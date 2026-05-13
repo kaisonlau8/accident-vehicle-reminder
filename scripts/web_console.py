@@ -35,6 +35,7 @@ from dfmc_browser_utils import (
     DEFAULT_BROWSER_CANDIDATES, detect_browser, find_free_port,
     write_browser_state, read_browser_state, process_is_running,
 )
+from time_utils import beijing_now, beijing_strftime
 
 _DEFAULT_TEST_PHONE = os.getenv("ADMIN_MOBILE", "").replace("+86-", "").replace("+86", "")
 
@@ -96,7 +97,7 @@ def _run_in_thread(target, name, args=(), kwargs=None):
     kwargs = kwargs or {}
     task_status["running"] = True
     task_status["task"] = name
-    task_status["started_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    task_status["started_at"] = beijing_strftime("%Y-%m-%d %H:%M:%S")
     task_status["log_lines"] = []
     task_status["result"] = None
 
@@ -153,6 +154,17 @@ def _cdp_port_alive(port: int) -> bool:
         with socket.create_connection(("127.0.0.1", port), timeout=1):
             return True
     except OSError:
+        return False
+
+
+def _dms_page_alive(port: int) -> bool:
+    """检查浏览器中是否还有 DMS 页面打开。"""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as resp:
+            targets = json.loads(resp.read().decode("utf-8"))
+            return any(t.get("type") == "page" and "m-dms.dfmc.com.cn" in (t.get("url") or "") for t in targets)
+    except Exception:
         return False
 
 
@@ -247,6 +259,23 @@ def _list_reports() -> list[dict]:
     return reports
 
 
+def _load_stores_json() -> dict:
+    path = CONFIG_DIR / "stores.json"
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    return {"version": "template", "stores": {}, "regions": {}, "national_recipients": {}}
+
+
+def _save_stores_json(data: dict) -> None:
+    path = CONFIG_DIR / "stores.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
 def _detect_available_browsers() -> list[dict]:
     """扫描本地可用浏览器，返回列表。"""
     browsers = []
@@ -283,13 +312,14 @@ def dashboard():
     # 浏览器会话状态
     browser_ok = False
     if browser:
-        browser_ok = _cdp_port_alive(browser.get("port", 0))
+        port = browser.get("port", 0)
+        browser_ok = _cdp_port_alive(port) and _dms_page_alive(port)
 
     # 快照统计
     snap_info = {}
     if snapshot:
         records = snapshot.get("records", [])
-        accident = [r for r in records if not r.get("is_qc_completed") and r.get("current_stage") != "已作废"]
+        accident = [r for r in records if not r.get("is_qc_completed")]
         snap_info = {
             "date": snapshot.get("snapshot_date", ""),
             "file": snapshot.get("_file", ""),
@@ -448,7 +478,7 @@ def data_page():
         return render_template("data.html", snap_info=None, overdue=[], alert_history={})
 
     records = snapshot.get("records", [])
-    active = [r for r in records if not r.get("is_qc_completed") and r.get("current_stage") != "已作废"]
+    active = [r for r in records if not r.get("is_qc_completed")]
     overdue = [r for r in active if r.get("days_in_shop", 0) >= 7]
     overdue.sort(key=lambda r: r.get("days_in_shop", 0), reverse=True)
 
@@ -511,7 +541,19 @@ def contacts_page():
         })
     store_list.sort(key=lambda s: (s["region"], s["code"]))
 
-    return render_template("contacts.html", store_list=store_list, regions=regions, national=national)
+    national_list = [
+        {"key": key, "phone": phone}
+        for key, phone in sorted(national.items())
+        if str(phone or "").strip()
+    ]
+
+    return render_template(
+        "contacts.html",
+        store_list=store_list,
+        regions=regions,
+        national=national,
+        national_list=national_list,
+    )
 
 
 @app.route("/clear-cache")
@@ -530,12 +572,47 @@ def contacts_upload():
         return redirect(url_for("contacts_page"))
 
     # 备份旧的 list.xlsx
-    backup = LIST_XLSX.parent / f"list_backup_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx"
+    backup = LIST_XLSX.parent / f"list_backup_{beijing_strftime('%Y%m%d%H%M%S')}.xlsx"
     if LIST_XLSX.exists():
         import shutil
         shutil.copy2(str(LIST_XLSX), str(backup))
 
     f.save(str(LIST_XLSX))
+    return redirect(url_for("contacts_page"))
+
+
+@app.route("/contacts/national/add", methods=["POST"])
+def contacts_national_add():
+    """新增或更新全国收件人。"""
+    key = str(request.form.get("key", "") or "").strip()
+    phone = str(request.form.get("phone", "") or "").strip()
+    phone = phone.replace("+86-", "").replace("+86", "").replace(" ", "")
+    if not key or not phone:
+        return redirect(url_for("contacts_page"))
+
+    stores_data = _load_stores_json()
+    national = stores_data.get("national_recipients", {})
+    if not isinstance(national, dict):
+        national = {}
+    national[key] = phone
+    stores_data["national_recipients"] = national
+    _save_stores_json(stores_data)
+    return redirect(url_for("contacts_page"))
+
+
+@app.route("/contacts/national/delete", methods=["POST"])
+def contacts_national_delete():
+    """删除全国收件人。"""
+    key = str(request.form.get("key", "") or "").strip()
+    if not key:
+        return redirect(url_for("contacts_page"))
+
+    stores_data = _load_stores_json()
+    national = stores_data.get("national_recipients", {})
+    if isinstance(national, dict) and key in national:
+        national.pop(key, None)
+        stores_data["national_recipients"] = national
+        _save_stores_json(stores_data)
     return redirect(url_for("contacts_page"))
 
 
@@ -554,13 +631,15 @@ def api_status():
     if browser:
         pid = browser.get("pid", 0)
         port = browser.get("port", 0)
-        browser_ok = _cdp_port_alive(port)
+        browser_ok = _cdp_port_alive(port) and _dms_page_alive(port)
         browser_info = {
             "browser": Path(browser.get("browserExecutable", "")).stem,
             "pid": pid,
             "port": port,
             "started_at": browser.get("startedAt", ""),
             "alive": browser_ok,
+            "cdp_alive": _cdp_port_alive(port),
+            "dms_page": _dms_page_alive(port),
         }
 
     return jsonify({
@@ -631,12 +710,24 @@ def api_browser_launch():
     # 先检查是否已有浏览器在运行（自动恢复逻辑会更新状态）
     existing_state = _load_browser_state()
     if existing_state and _cdp_port_alive(existing_state.get("port", 0)):
+        port = existing_state.get("port", 0)
+        # If DMS page is closed, open a new one via CDP
+        if not _dms_page_alive(port):
+            import urllib.request
+            try:
+                req = urllib.request.Request(
+                    f"http://127.0.0.1:{port}/json/new?https%3A%2F%2Fm-dms.dfmc.com.cn",
+                    method="PUT",
+                )
+                urllib.request.urlopen(req, timeout=3).read()
+            except Exception:
+                pass
         return jsonify({
-            "launched": False,
+            "launched": True,
             "reused": True,
-            "browser": Path(existing_state["browserExecutable"]).stem,
+            "browser": Path(existing_state["browserExecutable"]).stem if existing_state.get("browserExecutable") else "未知",
             "pid": existing_state["pid"],
-            "port": existing_state["port"],
+            "port": port,
             "message": "浏览器已在运行，直接使用当前会话",
         })
 
@@ -660,7 +751,13 @@ def api_browser_launch():
 
     import subprocess
     try:
-        proc = subprocess.Popen(cmd, start_new_session=True)
+        proc = subprocess.Popen(
+            cmd,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
     except Exception as exc:
         return jsonify({"error": f"启动浏览器失败: {exc}"}), 500
 
@@ -672,10 +769,11 @@ def api_browser_launch():
         # 扫描系统中已存在的浏览器进程，复用它
         recovered = _find_existing_browser()
         if recovered and _cdp_port_alive(recovered.get("port", 0)):
+            write_browser_state(RUNTIME_DIR / "browser-state.json", recovered)
             return jsonify({
-                "launched": False,
+                "launched": True,
                 "reused": True,
-                "browser": Path(recovered["browserExecutable"]).stem,
+                "browser": Path(recovered["browserExecutable"]).stem if recovered.get("browserExecutable") else "未知",
                 "pid": recovered["pid"],
                 "port": recovered["port"],
                 "message": "新浏览器因 profile 冲突退出，已自动连接到现有浏览器会话",
@@ -691,7 +789,7 @@ def api_browser_launch():
         "browserExecutable": str(browser_executable),
         "browserProfileDir": str(browser_profile_dir),
         "targetUrl": target_url,
-        "startedAt": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+        "startedAt": beijing_now().strftime("%Y-%m-%dT%H:%M:%S"),
     })
 
     # macOS: 用 AppleScript 激活窗口
@@ -845,12 +943,10 @@ def _run_evening(skip_crawl=False):
 
 def _run_scheduler_loop(skip_crawl=False):
     """定时等候模式：后台常驻，10:00/17:00 自动触发任务。"""
-    import datetime as dt
-
     scheduler_state["scheduler_stop"] = False
-    scheduler_state["started_at"] = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    scheduler_state["started_at"] = beijing_strftime("%Y-%m-%d %H:%M:%S")
 
-    print("[定时等候模式] 调度器已启动")
+    print("[定时等候模式] 调度器已启动（北京时间 UTC+8）")
     print("  10:00 — 自动爬取 + 超期告警 + 门店/区域报表")
     print("  17:00 — 自动爬取 + 门店/区域报表 + 全国报表")
     print("  通过 Web 控制台停止")
@@ -859,16 +955,16 @@ def _run_scheduler_loop(skip_crawl=False):
 
     fired = {"10:00": False, "17:00": False}
     while not scheduler_state["scheduler_stop"]:
-        now = dt.datetime.now()
+        now = beijing_now()
         now_str = now.strftime("%H:%M")
 
         # 计算下一次触发时间描述
         if now_str < "10:00":
-            scheduler_state["next_fire"] = f"今天 10:00（{now_str}）"
+            scheduler_state["next_fire"] = f"今天 10:00（北京时间 {now_str}）"
         elif now_str < "17:00":
-            scheduler_state["next_fire"] = f"今天 17:00（{now_str}）"
+            scheduler_state["next_fire"] = f"今天 17:00（北京时间 {now_str}）"
         else:
-            scheduler_state["next_fire"] = f"明天 10:00（{now_str}）"
+            scheduler_state["next_fire"] = f"明天 10:00（北京时间 {now_str}）"
 
         if now_str == "10:00" and not fired["10:00"]:
             print(f"\n{'=' * 50}")

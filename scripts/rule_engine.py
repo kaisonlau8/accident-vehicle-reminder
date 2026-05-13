@@ -8,7 +8,6 @@
 """
 
 import json
-import os
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
@@ -83,7 +82,7 @@ def load_stores_config() -> dict:
             supervisors_seen.setdefault(sup_name, {"name": sup_name, "phone": sup_phone})
             regions[region_name] = {"name": region_name, "supervisor": supervisors_seen[sup_name]}
 
-    # national_recipients: 优先从 .env 读取，其次从 stores.json 读取
+    # national_recipients: 从 stores.json 读取，由控制台维护
     nr = {}
     stores_json_path = CONFIG_DIR / "stores.json"
     if stores_json_path.exists():
@@ -92,16 +91,6 @@ def load_stores_config() -> dict:
             nr = legacy.get("national_recipients", {})
             if isinstance(nr, list):
                 nr = {}
-
-    # .env 中的真实手机号覆盖 stores.json 占位符
-    _env_nr = {
-        "zhuang_shuai": os.getenv("RECIPIENT_ZHUANG_SHUAI", ""),
-        "yang_yongchang": os.getenv("RECIPIENT_YANG_YONGCHANG", ""),
-    }
-    for key, val in _env_nr.items():
-        val = val.replace("+86-", "").replace("+86", "")
-        if val:
-            nr[key] = val
 
     return {"stores": stores, "regions": regions, "national_recipients": nr}
 
@@ -138,14 +127,24 @@ def _get_recipient_phones(rule: dict, store_config: dict, store_code: str) -> li
             sup = region_info.get("supervisor", {})
             if sup.get("phone"):
                 phones.append(sup["phone"])
-        elif role in ("zhuang_shuai", "yang_yongchang"):
+        else:
             nr = store_config.get("national_recipients", {})
-            if isinstance(nr, dict):
-                phone = nr.get(role, "")
-            else:
-                phone = ""
+            phone = nr.get(role, "") if isinstance(nr, dict) else ""
             if phone:
                 phones.append(phone)
+    return list(set(phones))
+
+
+def _get_all_national_recipient_phones(store_config: dict) -> list[str]:
+    """获取控制台配置的全部全国收件人手机号。"""
+    nr = store_config.get("national_recipients", {})
+    if not isinstance(nr, dict):
+        return []
+    phones = []
+    for phone in nr.values():
+        phone = str(phone or "").strip()
+        if phone:
+            phones.append(phone)
     return list(set(phones))
 
 
@@ -156,26 +155,18 @@ def _get_region_recipient_phones(region_name: str, store_config: dict) -> list[s
     sup = region_info.get("supervisor", {})
     if sup.get("phone"):
         phones.append(sup["phone"])
-    nr = store_config.get("national_recipients", {})
-    if isinstance(nr, dict):
-        for key in ["zhuang_shuai", "yang_yongchang"]:
-            if nr.get(key):
-                phones.append(nr[key])
+    phones.extend(_get_all_national_recipient_phones(store_config))
     return list(set(phones))
 
 
 def _get_national_recipient_phones(store_config: dict) -> list[str]:
-    """获取全国报表收件人手机号（全部督导+庄帅+杨永昌）。"""
+    """获取全国报表收件人手机号（全部督导+控制台配置的全国收件人）。"""
     phones = []
     for region_name, region_info in store_config.get("regions", {}).items():
         sup = region_info.get("supervisor", {})
         if sup.get("phone"):
             phones.append(sup["phone"])
-    nr = store_config.get("national_recipients", {})
-    if isinstance(nr, dict):
-        for key in ["zhuang_shuai", "yang_yongchang"]:
-            if nr.get(key):
-                phones.append(nr[key])
+    phones.extend(_get_all_national_recipient_phones(store_config))
     return list(set(phones))
 
 
@@ -363,12 +354,17 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
     count_14d = sum(1 for v in active_records if v.get("days_in_shop", 0) >= 14)
     total = len(active_records)
 
+    total_accident_orders_30d = len(records)
     completed = [r for r in records if r.get("is_qc_completed")]
     completed_7d = sum(1 for r in completed if r.get("days_in_shop", 0) <= 7)
     completed_10d = sum(1 for r in completed if r.get("days_in_shop", 0) <= 10)
 
-    kpi_7d_rate = f"{completed_7d / max(len(records), 1) * 100:.1f}%"
-    kpi_10d_rate = f"{completed_10d / max(len(records), 1) * 100:.1f}%"
+    # KPI口径：
+    # 30天内事故工单7天完工率 = 7天内完工事故车辆数 / 全部事故工单数 * 100%
+    # 30天内事故工单10天完工率 = 10天内完工事故车辆数 / 全部事故工单数 * 100%
+    denominator = max(total_accident_orders_30d, 1)
+    kpi_7d_rate = f"{completed_7d / denominator * 100:.1f}%"
+    kpi_10d_rate = f"{completed_10d / denominator * 100:.1f}%"
 
     regions_summary = []
     for rn, rv in results["region_reports"].items():
@@ -386,6 +382,9 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
         "count_14d": count_14d,
         "kpi_7d_rate": kpi_7d_rate,
         "kpi_10d_rate": kpi_10d_rate,
+        "total_accident_orders_30d": total_accident_orders_30d,
+        "completed_7d": completed_7d,
+        "completed_10d": completed_10d,
         "regions": regions_summary,
         "snapshot_date": snapshot_date,
         "date_range": date_range,

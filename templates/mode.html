@@ -89,7 +89,10 @@ setInterval(function() {
 
 <div class="card" style="border-left: 4px solid var(--turquoise);">
   <h2>正式模式 — 17:00 报表（立即执行）</h2>
-  <p style="color:var(--gray); margin-bottom:12px;">爬取+导入+门店/区域报表+全国报表+KPI，按规则通知对应收件人。</p>
+  <p style="color:var(--gray); margin-bottom:8px;">爬取+导入+门店/区域报表+全国报表+KPI，按规则通知对应收件人。</p>
+  <p style="color:var(--gray); margin-bottom:6px;">30天内事故工单7天完工率 = 7天内完工事故车辆数 / 全部事故工单数 * 100%</p>
+  <p style="color:var(--gray); margin-bottom:6px;">30天内事故工单10天完工率 = 10天内完工事故车辆数 / 全部事故工单数 * 100%</p>
+  <p style="color:var(--gray); margin-bottom:12px;">工单里不包含作废。</p>
   <form method="post" action="/mode">
     <input type="hidden" name="action" value="evening">
     <div class="form-row">

@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import time
+import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -28,6 +29,7 @@ from message_dispatcher import (
     dispatch_region_reports,
     dispatch_national_report,
 )
+from time_utils import beijing_now, beijing_strftime
 
 PLUGIN_ROOT = Path(__file__).resolve().parent.parent
 DATA_DIR = PLUGIN_ROOT / "data" / "repair_orders"
@@ -72,11 +74,15 @@ def _find_latest_snapshot() -> dict | None:
 
 def _crawl_and_import() -> dict | None:
     """运行维修工单爬取，然后导入Excel生成JSON。返回导入后的数据dict。"""
-    from dfmc_browser_utils import get_default_state_file
+    from dfmc_browser_utils import ensure_cdp_browser_running, get_default_state_file
 
     state_file = get_default_state_file(PLUGIN_ROOT)
-    if not state_file.exists():
-        print("[WARN] 无浏览器会话，无法爬取。使用最新快照。")
+
+    # Validate browser (with auto-recovery if state file is missing/stale)
+    try:
+        ensure_cdp_browser_running(state_file)
+    except (FileNotFoundError, RuntimeError) as exc:
+        print(f"[WARN] 无浏览器会话: {exc}。使用最新快照。")
         return _find_latest_snapshot()
 
     # 运行爬取
@@ -90,7 +96,8 @@ def _crawl_and_import() -> dict | None:
     )
 
     if result.returncode != 0:
-        print(f"[ERROR] 爬取失败: {result.stderr}")
+        err_msg = result.stderr.strip() or result.stdout.strip() or "未知错误"
+        print(f"[ERROR] 爬取失败: {err_msg}")
         return _find_latest_snapshot()
 
     # 找最新的爬取Excel
@@ -116,7 +123,7 @@ def run_morning_alerts(xlsx_path: str | None = None, skip_crawl: bool = False, t
     """执行 10:00 任务（规则 1 告警 + 规则 3/4 门店/区域报表）。"""
     print("=" * 50)
     mode_tag = f" [测试→{test_phone}]" if test_phone else ""
-    print(f"[10:00] 事故车超期告警 + 门店/区域报表{mode_tag} — {time.strftime('%Y-%m-%d %H:%M')}")
+    print(f"[10:00] 事故车超期告警 + 门店/区域报表{mode_tag} — {beijing_strftime('%Y-%m-%d %H:%M')} (北京时间)")
     print("=" * 50)
 
     # 获取数据
@@ -165,7 +172,7 @@ def run_evening_reports(xlsx_path: str | None = None, skip_crawl: bool = False, 
     """执行 17:00 报表任务（规则 3 + 4 + 5）。"""
     print("=" * 50)
     mode_tag = f" [测试→{test_phone}]" if test_phone else ""
-    print(f"[17:00] 事故车超期日报{mode_tag} — {time.strftime('%Y-%m-%d %H:%M')}")
+    print(f"[17:00] 事故车超期日报{mode_tag} — {beijing_strftime('%Y-%m-%d %H:%M')} (北京时间)")
     print("=" * 50)
 
     # 获取数据
@@ -193,7 +200,11 @@ def run_evening_reports(xlsx_path: str | None = None, skip_crawl: bool = False, 
     excel_path = generate_national_report(results)
 
     print(f"全国汇总: 在修 {national['total_vehicles']} 台 | 7天 {national['count_7d']} | 10天 {national['count_10d']} | 14天 {national['count_14d']}")
-    print(f"KPI: 7天完工率 {national['kpi_7d_rate']} | 10天完工率 {national['kpi_10d_rate']}")
+    print(
+        "KPI:"
+        f" 30天内事故工单7天完工率 {national['kpi_7d_rate']}"
+        f" | 30天内事故工单10天完工率 {national['kpi_10d_rate']}"
+    )
 
     # 发送门店报表（card + Excel）
     store_excel_paths = generate_all_store_reports(results)
@@ -256,10 +267,9 @@ if __name__ == "__main__":
         print("  按 Ctrl+C 退出")
         print()
 
-        import datetime
         fired = {"10:00": False, "17:00": False}
         while True:
-            now = datetime.datetime.now().strftime("%H:%M")
+            now = beijing_now().strftime("%H:%M")
             if now == "10:00" and not fired["10:00"]:
                 run_morning_alerts(skip_crawl=skip_crawl)
                 fired["10:00"] = True

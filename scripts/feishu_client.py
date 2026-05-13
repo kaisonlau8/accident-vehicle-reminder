@@ -110,21 +110,6 @@ def resolve_phone_to_open_id(phone: str) -> str | None:
         _phone_to_open_id[phone] = open_id
         _save_recipients_cache()
     return open_id
-
-
-def resolve_user_name(open_id: str) -> str:
-    """open_id → 用户姓名。"""
-    resp = requests.get(
-        f"{BASE_URL}/contact/v3/users/{open_id}?user_id_type=open_id",
-        headers=_auth_headers(),
-        timeout=10,
-    )
-    if resp.ok:
-        data = resp.json()
-        return data.get("data", {}).get("user", {}).get("name", open_id)
-    return open_id
-
-
 # ── 消息发送 ────────────────────────────────────────────────
 
 def send_text_message(open_id: str, text: str) -> dict | None:
@@ -196,30 +181,6 @@ def _upload_file(file_path: str) -> str | None:
     except requests.RequestException as e:
         print(f"[ERROR] 上传文件异常: {e}")
         return None
-
-
-# ── 批量发送（带限速） ──────────────────────────────────────
-
-def send_batch_text(open_ids: list[str], text: str, interval: float = 0.3) -> list[dict]:
-    """批量发送文本消息，自动限速。"""
-    results = []
-    for oid in open_ids:
-        result = send_text_message(oid, text)
-        results.append({"open_id": oid, "result": result, "success": result is not None})
-        time.sleep(interval)
-    return results
-
-
-def send_batch_card(open_ids: list[str], card: dict, interval: float = 0.3) -> list[dict]:
-    """批量发送卡片消息，自动限速。"""
-    results = []
-    for oid in open_ids:
-        result = send_card_message(oid, card)
-        results.append({"open_id": oid, "result": result, "success": result is not None})
-        time.sleep(interval)
-    return results
-
-
 # ── Card 模板 ───────────────────────────────────────────────
 
 def build_store_report_card(store_name: str, data: dict) -> dict:
@@ -399,7 +360,13 @@ def build_national_summary_card(data: dict) -> dict:
             {"tag": "hr"},
             {
                 "tag": "div",
-                "text": {"tag": "lark_md", "content": f"**7天完工率**: {data.get('kpi_7d_rate', '-')}\n**10天完工率**: {data.get('kpi_10d_rate', '-')}"}
+                "text": {
+                    "tag": "lark_md",
+                    "content": (
+                        f"**30天内事故工单7天完工率**: {data.get('kpi_7d_rate', '-')}\n"
+                        f"**30天内事故工单10天完工率**: {data.get('kpi_10d_rate', '-')}"
+                    )
+                }
             },
             {"tag": "hr"},
             {
