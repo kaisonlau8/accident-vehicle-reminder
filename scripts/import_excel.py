@@ -142,9 +142,19 @@ def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
         }
         records.append(record)
 
+    # 从实际数据推断日期范围（而非硬编码30天）
+    entry_dates = [r.get("entry_date") for r in records if r.get("entry_date")]
+    if entry_dates:
+        actual_start = min(entry_dates)
+        actual_end = max(entry_dates)
+    else:
+        actual_start = (date.today() - timedelta(days=30)).strftime("%Y-%m-%d")
+        actual_end = today
+
     result = {
         "snapshot_date": today,
-        "snapshot_start": (date.today() - timedelta(days=30)).strftime("%Y-%m-%d"),
+        "snapshot_start": actual_start,
+        "snapshot_end": actual_end,
         "source": "manual_excel",
         "source_file": Path(xlsx_path).name,
         "generated_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S+08:00"),
@@ -157,6 +167,12 @@ def import_excel(xlsx_path: str, filter_accident: bool = True) -> dict:
     # 保存 JSON
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     output_path = DATA_DIR / f"repair_orders_{today}.json"
+
+    # Sanity check: warn if data coverage looks suspiciously narrow
+    if actual_start == actual_end and len(records) < 50:
+        print(f"[WARN] 数据仅覆盖单日 ({actual_start})，共 {len(records)} 条记录")
+        print("  可能爬取时日期范围未被正确设置，建议检查爬取日志")
+
     with open(output_path, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2, default=str)
 

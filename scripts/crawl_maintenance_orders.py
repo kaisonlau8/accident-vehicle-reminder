@@ -733,6 +733,12 @@ def main() -> int:
                     # Click query
                     click_query(page)
 
+                    # Post-query verification: confirm date range still applied
+                    if not _verify_date_range(page, date_str(start_date), date_str(end_date)):
+                        print("  [WARN] Date range reset after query! Re-setting...")
+                        set_arrival_date_range(page, start_date, end_date)
+                        click_query(page)
+
                     # Click export and capture download
                     filepath = click_export_and_capture(page, cdp_session, output_dir, today)
                     if filepath:
