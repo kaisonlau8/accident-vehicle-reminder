@@ -17,7 +17,7 @@
 
   <table style="margin-top:8px;">
     <tr><td style="width:120px;">触发</td><td>{{ rule.get('trigger', '') }} {% if rule.get('trigger_time') %}@ {{ rule.trigger_time }}{% endif %}{% if rule.get('trigger_times') %}@ {{ rule.trigger_times | join(', ') }}{% endif %}</td></tr>
-    <tr><td>收件人</td><td>{{ rule.get('recipients', []) | join(', ') }}</td></tr>
+    <tr><td>收件人</td><td>{{ rule.get('recipient_display', '—') }}</td></tr>
     <tr><td>消息类型</td><td>{{ rule.get('msg_type', '') }}</td></tr>
     {% if rule.levels %}
     <tr><td>分级</td>

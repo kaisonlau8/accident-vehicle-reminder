@@ -1023,7 +1023,7 @@ def main() -> int:
     # Optionally start keepalive
     keepalive_proc: Optional[subprocess.Popen[Any]] = None
     if args.keepalive:
-        python_bin = str((plugin_root / ".venv" / "bin" / "python3").resolve())
+        python_bin = str(plugin_root / ".venv" / "bin" / "python")
         keepalive_script = str((plugin_root / "scripts" / "keepalive_browser.py").resolve())
         keepalive_proc = subprocess.Popen(
             [python_bin, keepalive_script, "--state-file", str(state_file)],

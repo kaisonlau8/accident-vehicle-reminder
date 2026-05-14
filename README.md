@@ -1,165 +1,183 @@
 # 事故车维修超期提醒系统
 
-猛士科技服务运营 — 事故车维修进度监控与飞书自动提醒。
+猛士科技服务运营的事故维修进度监控系统。系统从 DMS 爬取近 30 天事故维修工单，按维修状态识别在修车辆，生成门店、区域、全国报表，并通过飞书发送告警和报表。
 
-## 背景
+## 当前口径
 
-123 家服务网点中 109 家共用钣喷车间，事故车维修缺乏有效管控。本系统自动监控维修进度，对超期车辆通过飞书发送告警和报表。
+- 所有定时触发和爬虫日期范围均按北京时间 UTC+8 计算。
+- DMS 爬取时固定筛选“业务类型 = 事故维修”，导入阶段信任 DMS 筛选结果，不再做事故车二次判断。
+- 爬取日期范围为“北京时间今天向前 30 天 ~ 北京时间今天”。
+- 状态为“已作废”的工单在 Excel 导入阶段直接移除，不参与告警、统计、报表和 KPI。
+- 维修中状态仅包含：待派工、接车、维修中。
+- 其他所有状态均视为维修完成。
 
 ## 提醒规则
 
-| 规则 | 触发条件 | 时间 | 收件人 | 消息类型 |
-|------|---------|------|--------|---------|
-| 1 | ≥7天未完工每日分级告警（⚠️7天/🚨10天/🔴14天） | 10:00 每日 | 门店提醒人1~4 | 卡片告警 |
-| 2 | 已作废工单排除（不纳入告警和统计） | 始终生效 | — | 过滤规则 |
-| 3 | 门店未完工汇总 | 10:00/17:00 每日 | 门店提醒人1 | 卡片+Excel |
-| 4 | 区域未完工汇总 | 10:00/17:00 每日 | 该区域督导+庄帅+杨永昌 | 卡片+Excel |
-| 5 | 全国汇总+KPI | 17:00 每日 | 全部督导+庄帅+杨永昌 | 卡片+Excel |
+| 规则 | 内容 | 时间 | 收件人 | 消息 |
+|------|------|------|--------|------|
+| 1 | 事故车超期告警，7 天/10 天/14 天分级 | 10:00 | 门店提醒人 1~4 | 卡片 |
+| 2 | 已作废工单排除 | 导入时生效 | 无 | 过滤规则 |
+| 3 | 门店事故维修未完工汇总 | 10:00、17:00 | 门店服务经理（提醒人 1） | 卡片 |
+| 4 | 区域事故维修超期汇总 | 10:00、17:00 | 区域督导 + 控制台维护的全国收件人 | 卡片 + Excel |
+| 5 | 全国事故维修超期汇总及 KPI | 17:00 | 全部区域督导 + 控制台维护的全国收件人 | 卡片 + Excel |
 
-告警分级：7天（黄色⚠️）→ 10天（橙色🚨）→ 14天（红色🔴），所有≥7天的事故车每天持续跟踪。
+超期分级按在修车辆的到店天数判断：
 
-统计分档（不累加）：7~10天未完工 / 10~14天未完工 / ≥14天未完工，每辆车只归入最高档，不重复计算。
+| 分级 | 条件 |
+|------|------|
+| 7 天超期 | days_in_shop >= 7 |
+| 10 天超期 | days_in_shop >= 10 |
+| 14 天超期 | days_in_shop >= 14 |
 
-重复提醒追踪：已提醒过的车辆，卡片会标注"这是第X次提醒，首次提醒时间：YYYY-MM-DD"。首次提醒记录保存在 `data/followup/alert_history.json`。
+## KPI 口径
 
-排除规则：当前节点为"已作废"的工单不纳入告警、统计和报表。
+全国报表中的 KPI 使用 30 天事故工单作为分母，工单里不包含作废。
 
-KPI 目标：7 天完工率 ≥55%，10 天完工率 ≥80%。
+```text
+30天内事故工单7天完工率 = 7天内完工事故车辆数 / 全部事故工单数 * 100%
+30天内事故工单10天完工率 = 10天内完工事故车辆数 / 全部事故工单数 * 100%
+```
+
+其中：
+
+- 全部事故工单数：DMS 已按事故维修筛选后、导入时排除已作废后的全部工单数。
+- 7 天内完工事故车辆数：已视为维修完成且 `days_in_shop <= 7` 的工单数。
+- 10 天内完工事故车辆数：已视为维修完成且 `days_in_shop <= 10` 的工单数。
 
 ## 快速开始
 
-### 1. 初始化
+### 1. 初始化环境
 
 ```bash
 python3 scripts/bootstrap.py
 ```
 
-### 2. 配置
+### 2. 配置飞书
 
-复制 `.env.example` 为 `.env`，填入飞书应用凭证。
+复制 `.env.example` 为 `.env`，填写飞书应用凭证和测试手机号。
 
-联系人信息维护 `list.xlsx`（门店编码→区域→督导→提醒人1~4），更新此表即可。
+```bash
+cp .env.example .env
+```
 
-### 3. 登录 DMS
+`.env` 示例：
+
+```env
+APP_ID=cli_xxxxx
+APP_SECRET=xxxxx
+ADMIN_MOBILE=13800138000
+```
+
+### 3. 维护联系人
+
+门店、区域、督导、提醒人信息维护在根目录 `list.xlsx`。格式见 [docs/list_xlsx_format.md](docs/list_xlsx_format.md)。
+
+全国收件人在 Web 控制台的“门店联系人”页面维护，数据写入 `config/stores.json` 的 `national_recipients`。
+
+### 4. 登录 DMS
 
 ```bash
 ./login.sh
 ```
 
-Chrome 弹窗打开 DMS 系统，手动登录后回到终端。
+浏览器打开 DMS 后，手动完成登录。登录后的浏览器会话会写入 `.runtime/browser-state.json`。
 
-### 4. 爬取 + 分析 + 发送
-
-```bash
-# 测试模式（默认）：爬取最新数据，所有消息发给测试手机号（通过 --test-phone 或 ADMIN_MOBILE 环境变量指定），跑完就退出
-./run.sh
-
-# 测试模式，用已有数据不爬取
-./run.sh --skip-crawl
-
-# 正式模式：启动浏览器保活 + 定时调度常驻运行（Ctrl+C退出）
-./run.sh --prod
-
-# 正式模式，仅执行10:00任务（单次）
-./run.sh --prod --morning
-
-# 正式模式，仅执行17:00报表（单次）
-./run.sh --prod --evening
-```
-
-`./run.sh --prod` 会自动：
-- 后台启动浏览器保活（每5分钟刷新防止会话过期）
-- 前台启动定时调度器（10:00 自动爬取+告警+报表，17:00 自动爬取+报表）
-- Ctrl+C 同时停止保活和调度
-
-### 5. Web 控制台（推荐）
+### 5. 启动 Web 控制台
 
 ```bash
 ./run.sh --console
 ```
 
-浏览器打开 `http://localhost:9000`，可通过页面操作所有功能：
+默认地址：
 
-| 操作 | 说明 |
-|------|------|
-| 定时等候模式 | 启动后等到 10:00/17:00 自动触发，不立即发送，常驻运行 |
-| 测试模式 | 立即执行，所有消息发给测试手机号 |
-| 正式 10:00 任务 | 立即执行告警+门店/区域报表 |
-| 正式 17:00 报表 | 立即执行全报表 |
-| 手动触发 | 爬取数据、导入 Excel、单次触发指定任务 |
-| 规则管理 | 查看/编辑 5 条规则参数 |
-| 数据查看 | 超期车辆列表、告警历史 |
-| 报表下载 | 下载生成的 Excel 报表 |
-| 门店联系人 | 查看/上传 list.xlsx |
-
-其他参数：
-```bash
-./run.sh --console --port 8000       # 自定义端口
-./run.sh --console --skip-crawl      # 控制台 + 默认跳过爬取
+```text
+http://127.0.0.1:9000
 ```
+
+控制台支持：
+
+| 页面 | 用途 |
+|------|------|
+| 仪表盘 | 查看浏览器会话、DMS 保活、最新数据和任务状态 |
+| 模式切换 | 启动定时等候、立即执行测试、立即执行正式任务 |
+| 手动触发 | 单独爬取、导入 Excel、执行 10:00 或 17:00 任务 |
+| 规则管理 | 查看和编辑规则参数 |
+| 数据查看 | 查看超期车辆列表 |
+| 报表下载 | 下载生成的 Excel 报表 |
+| 门店联系人 | 上传 `list.xlsx`，新增或删除全国收件人 |
+
+## 常用命令
+
+```bash
+# 打开 DMS 登录浏览器
+./login.sh
+
+# 启动 Web 控制台
+./run.sh --console
+
+# 使用 8000 端口启动控制台
+./run.sh --console --port 8000
+
+# 测试模式，所有消息发给 ADMIN_MOBILE 或 --test-phone
+./run.sh --test --test-phone 13800138000
+
+# 跳过爬取，用最新快照跑测试
+./run.sh --test --skip-crawl --test-phone 13800138000
+
+# 正式单次执行 10:00 任务
+./run.sh --morning
+
+# 正式单次执行 17:00 报表
+./run.sh --evening
+```
+
+## DMS 爬取与保活
+
+Web 控制台启动后会监控浏览器会话。只要 DMS 页面在线，控制台会自动启动 `keepalive_browser.py`，每 300 秒刷新一次 DMS 页面，防止会话过期。
+
+仪表盘会显示 DMS 保活状态和“距离下一次刷新还有 xx 秒”。导出期间会写入 `.runtime/exporting.lock`，保活进程检测到锁文件后会跳过刷新，避免打断下载。
+
+DMS 爬取步骤按页面真实交互顺序执行：
+
+1. 填写到店日期。
+2. 判断筛选区状态：显示 `open more/展开` 时点击展开；显示 `Put away/收起` 时不点击。
+3. 选择业务类型：事故维修。
+4. 点击查询。
+5. 校验日期和业务类型仍正确。
+6. 点击导出。
 
 ## 数据流
 
-```
-DMS 自动爬取 → output/maintenance_orders.xlsx → import_excel.py → repair_orders JSON
-                    ↑                                                               ↓
-          open_browser_for_login.py (手动登录)                      rule_engine.py → 5 条规则评估
-          keepalive_browser.py (5分钟保活)                                 ↓
-                                                              alert_history.json → 提醒次数追踪
-                                                                       ↓
-                                                              report_generator.py → Excel 报表
-                                                                       ↓
-                                                             message_dispatcher.py → 飞书消息
+```text
+DMS 页面
+  -> crawl_maintenance_orders.py
+  -> output/maintenance_orders_YYYY-MM-DD.xlsx
+  -> import_excel.py
+  -> data/repair_orders/repair_orders_YYYY-MM-DD.json
+  -> rule_engine.py
+  -> report_generator.py
+  -> message_dispatcher.py
+  -> 飞书
 ```
 
-## 配置文件
+## 主要文件
 
 | 文件 | 说明 |
 |------|------|
-| `.env` | 飞书 APP_ID/SECRET |
-| `list.xlsx` | 门店联系人主表（门店编码→区域→督导→提醒人1~4，直接更新此表即可） |
-| `config/rules.json` | 5 条提醒规则配置（阈值、收件人角色） |
-| `config/stores.json` | 仅存庄帅/杨永昌手机号（其余联系人从 list.xlsx 读取） |
-| `config/recipients.json` | 手机号→open_id 缓存（自动生成） |
-| `data/followup/alert_history.json` | VIN告警历史（首次提醒日期+累计次数，自动生成） |
-| `.runtime/browser-state.json` | 浏览器CDP端口+PID（自动生成） |
+| `.env` | 飞书应用凭证和测试手机号，本地私密文件，不提交 |
+| `.env.example` | 环境变量示例 |
+| `list.xlsx` | 门店联系人主表，包含真实手机号，不提交 |
+| `config/rules.json` | 规则配置 |
+| `config/stores.json` | 全国收件人配置 |
+| `config/recipients.json` | 手机号到飞书 open_id 的缓存，自动生成 |
+| `.runtime/browser-state.json` | DMS 浏览器会话状态，自动生成 |
+| `.runtime/keepalive-state.json` | DMS 保活状态，自动生成 |
+| `output/maintenance_orders_YYYY-MM-DD.xlsx` | DMS 导出的原始 Excel |
+| `data/repair_orders/repair_orders_YYYY-MM-DD.json` | 标准化后的数据快照 |
+| `data/reports/*.xlsx` | 生成的门店、区域、全国报表 |
 
-## DMS Excel 格式
+## 运行文档
 
-系统期望的 Excel 包含 4 个 Sheet：
-- **维修工单**（主表）：门店编码、门店名称、大区、派工单号、维修状态、到店时间、VIN码、车系名称 等 24 列
-- 工单工时、工单备件、工单其他项目（辅助 Sheet，用于判断事故车类型）
-
-## 报表输出
-
-| 报表 | 文件路径 | 内容 |
-|------|---------|------|
-| 全国汇总 | `data/reports/national_report_YYYY-MM-DD.xlsx` | 全国汇总+区域汇总+超期车辆明细+各门店汇总 |
-| 区域汇总 | `data/reports/region_{区域名}_YYYY-MM-DD.xlsx` | 区域门店汇总+超期车辆明细（含告警级别） |
-| 门店汇总 | `data/reports/store_{门店编码}_YYYY-MM-DD.xlsx` | 门店汇总指标+超期车辆明细（含告警级别） |
-
-## 目录结构
-
-```
-plugins/accident-vehicle-reminder/
-├── .env / .env.example
-├── requirements.txt
-├── README.md
-├── config/          # 规则 + 门店 + 收件人配置
-├── scripts/         # 核心脚本
-│   ├── crawl_maintenance_orders.py/sh  # DMS维修工单爬取
-│   ├── open_browser_for_login.py/sh    # 浏览器登录弹窗
-│   ├── keepalive_browser.py/sh         # 5分钟保活
-│   ├── dfmc_browser_utils.py           # 浏览器共享工具
-│   ├── import_excel.py                 # Excel→JSON转换
-│   ├── rule_engine.py                  # 规则评估+告警历史追踪
-│   ├── feishu_client.py                # 飞书API+卡片模板
-│   ├── message_dispatcher.py           # 消息路由+发送
-│   ├── report_generator.py             # 全国/区域Excel报表生成
-│   ├── scheduler.py                    # 定时调度(含爬取)
-│   └── web_console.py                  # Web控制台(端口9000)
-├── templates/        # HTML页面模板（仪表盘/模式/触发/规则/数据/报表/联系人）
-├── docs/             # 格式说明和飞书消息模板文档
-├── data/             # 运行时数据（快照、报表、告警历史、日志）
-└── output/           # 爬取导出的Excel文件
-```
+- 日常运维和故障排查：[docs/operations.md](docs/operations.md)
+- `list.xlsx` 格式：[docs/list_xlsx_format.md](docs/list_xlsx_format.md)
+- 飞书消息模板：[docs/飞书消息模板.md](docs/飞书消息模板.md)

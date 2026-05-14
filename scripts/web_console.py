@@ -5,6 +5,7 @@
 
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -71,6 +72,11 @@ scheduler_state = {
     "scheduler_thread": None,
     "scheduler_stop": False,  # 用于停止定时调度线程
     "next_fire": "",          # 下一次触发时间描述
+}
+
+keepalive_state = {
+    "thread": None,
+    "stop": False,
 }
 
 
@@ -276,6 +282,189 @@ def _save_stores_json(data: dict) -> None:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
+def _load_keepalive_runtime() -> dict:
+    path = RUNTIME_DIR / "keepalive-state.json"
+    if path.exists():
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            if isinstance(data, dict):
+                return data
+    return {}
+
+
+def _save_keepalive_runtime(data: dict) -> None:
+    path = RUNTIME_DIR / "keepalive-state.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def _keepalive_process_running() -> bool:
+    state = _load_keepalive_runtime()
+    pid = int(state.get("pid") or 0)
+    if pid <= 0 or not process_is_running(pid):
+        return False
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pid), "-o", "stat=,command="],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except Exception:
+        return False
+
+    output = result.stdout.strip()
+    if not output:
+        return False
+    stat = output.split(None, 1)[0]
+    if "Z" in stat:
+        return False
+    return "keepalive_browser.py" in output
+
+
+def _coerce_epoch(value) -> int:
+    if value in (None, "", 0):
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            try:
+                return int(datetime.fromisoformat(value).timestamp())
+            except ValueError:
+                return 0
+    return 0
+
+
+def _get_keepalive_info() -> dict:
+    state = _load_keepalive_runtime()
+    running = _keepalive_process_running()
+    now_ts = int(time.time())
+    next_refresh_at = _coerce_epoch(state.get("nextRefreshAt"))
+    interval = int(state.get("interval") or 300)
+    started_at = _coerce_epoch(state.get("startedAt"))
+    if running and not next_refresh_at and started_at:
+        next_refresh_at = started_at + interval
+    return {
+        "running": running,
+        "pid": int(state.get("pid") or 0),
+        "interval": interval,
+        "started_at_epoch": started_at,
+        "last_action_at_epoch": _coerce_epoch(state.get("lastActionAt")),
+        "next_refresh_at_epoch": next_refresh_at,
+        "seconds_left": max(next_refresh_at - now_ts, 0) if running and next_refresh_at else 0,
+        "last_result": state.get("lastResult", ""),
+        "cycle": int(state.get("cycle") or 0),
+    }
+
+
+def _stop_keepalive_process() -> None:
+    state = _load_keepalive_runtime()
+    pid = int(state.get("pid") or 0)
+    if pid > 0 and _keepalive_process_running():
+        try:
+            os.kill(pid, 15)
+        except OSError:
+            pass
+    path = RUNTIME_DIR / "keepalive-state.json"
+    if path.exists():
+        path.unlink()
+
+
+def _ensure_keepalive_process() -> bool:
+    browser = _load_browser_state()
+    if not browser:
+        _stop_keepalive_process()
+        return False
+
+    port = int(browser.get("port") or 0)
+    if not port or not _cdp_port_alive(port) or not _dms_page_alive(port):
+        _stop_keepalive_process()
+        return False
+
+    if _keepalive_process_running():
+        return True
+
+    keepalive_script = PLUGIN_ROOT / "scripts" / "keepalive_browser.py"
+    python_bin = PLUGIN_ROOT / ".venv" / "bin" / "python"
+    try:
+        now_ts = int(time.time())
+        interval = 300
+        proc = subprocess.Popen(
+            [
+                str(python_bin),
+                str(keepalive_script),
+                "--state-file",
+                str(RUNTIME_DIR / "browser-state.json"),
+                "--status-file",
+                str(RUNTIME_DIR / "keepalive-state.json"),
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        return False
+
+    _save_keepalive_runtime({
+        "pid": proc.pid,
+        "interval": interval,
+        "startedAt": now_ts,
+        "lastResult": "starting",
+        "lastActionAt": 0,
+        "nextRefreshAt": now_ts + interval,
+    })
+    return True
+
+
+def _keepalive_watchdog_loop() -> None:
+    while not keepalive_state["stop"]:
+        try:
+            _ensure_keepalive_process()
+        except Exception:
+            pass
+        time.sleep(30)
+
+
+def _start_keepalive_watchdog() -> None:
+    thread = keepalive_state.get("thread")
+    if thread and thread.is_alive():
+        return
+    keepalive_state["stop"] = False
+    thread = threading.Thread(target=_keepalive_watchdog_loop, daemon=True)
+    keepalive_state["thread"] = thread
+    thread.start()
+
+
+def _format_rule_recipients(rule: dict, stores_config: dict) -> str:
+    """将规则原始 recipients 转成控制台友好的展示文本。"""
+    role_labels = {
+        "remind_all": "门店提醒人（1-4）",
+        "store_service_manager": "门店服务经理（提醒人1）",
+        "supervisor": "区域督导",
+    }
+    national = stores_config.get("national_recipients", {})
+    national_names = [str(name).strip() for name in national.keys() if str(name).strip()] if isinstance(national, dict) else []
+
+    display = []
+    include_national = False
+    for role in rule.get("recipients", []):
+        if role in role_labels:
+            display.append(role_labels[role])
+        else:
+            include_national = True
+
+    if include_national and national_names:
+        display.append(f"全国收件人（{'、'.join(national_names)}）")
+
+    return "，".join(display) if display else "—"
+
+
 def _detect_available_browsers() -> list[dict]:
     """扫描本地可用浏览器，返回列表。"""
     browsers = []
@@ -314,6 +503,9 @@ def dashboard():
     if browser:
         port = browser.get("port", 0)
         browser_ok = _cdp_port_alive(port) and _dms_page_alive(port)
+        if browser_ok:
+            _ensure_keepalive_process()
+    keepalive_info = _get_keepalive_info()
 
     # 快照统计
     snap_info = {}
@@ -340,6 +532,7 @@ def dashboard():
 
     return render_template("dashboard.html",
         browser=browser, browser_ok=browser_ok,
+        keepalive_info=keepalive_info,
         available_browsers=_detect_available_browsers(),
         Path=Path,
         snap_info=snap_info, history_info=history_info,
@@ -408,7 +601,13 @@ def mode_page():
 def rules_page():
     """规则列表页面。"""
     rules = load_rules_config()
-    return render_template("rules.html", rules=rules)
+    stores_config = load_stores_config()
+    display_rules = []
+    for rule in rules:
+        display_rule = dict(rule)
+        display_rule["recipient_display"] = _format_rule_recipients(rule, stores_config)
+        display_rules.append(display_rule)
+    return render_template("rules.html", rules=display_rules)
 
 
 @app.route("/rules/edit/<int:rule_id>", methods=["GET", "POST"])
@@ -632,6 +831,8 @@ def api_status():
         pid = browser.get("pid", 0)
         port = browser.get("port", 0)
         browser_ok = _cdp_port_alive(port) and _dms_page_alive(port)
+        if browser_ok:
+            _ensure_keepalive_process()
         browser_info = {
             "browser": Path(browser.get("browserExecutable", "")).stem,
             "pid": pid,
@@ -640,7 +841,9 @@ def api_status():
             "alive": browser_ok,
             "cdp_alive": _cdp_port_alive(port),
             "dms_page": _dms_page_alive(port),
+            "keepalive_running": _keepalive_process_running(),
         }
+    keepalive_info = _get_keepalive_info()
 
     return jsonify({
         "mode": scheduler_state["mode"],
@@ -655,6 +858,8 @@ def api_status():
         "alert_vin_count": len(alert_history),
         "next_fire": scheduler_state.get("next_fire", ""),
         "scheduler_started": scheduler_state.get("started_at", ""),
+        "keepalive_running": keepalive_info["running"],
+        "keepalive_info": keepalive_info,
     })
 
 
@@ -722,6 +927,7 @@ def api_browser_launch():
                 urllib.request.urlopen(req, timeout=3).read()
             except Exception:
                 pass
+        _ensure_keepalive_process()
         return jsonify({
             "launched": True,
             "reused": True,
@@ -800,6 +1006,8 @@ def api_browser_launch():
     except Exception:
         pass
 
+    _ensure_keepalive_process()
+
     return jsonify({
         "launched": True,
         "browser": app_name,
@@ -812,6 +1020,7 @@ def api_browser_launch():
 @app.route("/api/browser/disconnect", methods=["POST"])
 def api_browser_disconnect():
     """断开浏览器连接（清理状态文件，不杀浏览器进程）。"""
+    _stop_keepalive_process()
     state_file = RUNTIME_DIR / "browser-state.json"
     if state_file.exists():
         state_file.unlink()
@@ -891,6 +1100,7 @@ def api_clear_cache():
                 path.unlink()
                 cleared.append("收件人缓存 (recipients.json)")
         elif t == "browser_state":
+            _stop_keepalive_process()
             if RUNTIME_DIR.exists():
                 for f in RUNTIME_DIR.glob("*.json"):
                     f.unlink()
@@ -1028,5 +1238,6 @@ if __name__ == "__main__":
     parser.add_argument("--host", type=str, default="0.0.0.0", help="监听地址（默认 0.0.0.0）")
     args = parser.parse_args()
 
+    _start_keepalive_watchdog()
     print(f"事故车提醒系统 Web 控制台启动: http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=False)

@@ -90,8 +90,7 @@ def _crawl_and_import() -> dict | None:
     result = subprocess.run(
         [str(PYTHON_BIN), str(CRAWL_SCRIPT),
          "--state-file", str(state_file),
-         "--output-dir", str(OUTPUT_DIR),
-         "--keepalive"],
+         "--output-dir", str(OUTPUT_DIR)],
         capture_output=True, text=True, timeout=600,
     )
 

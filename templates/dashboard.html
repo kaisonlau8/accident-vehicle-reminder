@@ -35,6 +35,20 @@
     </div>
     <div class="label">任务状态</div>
   </div>
+  <div class="stat">
+    <div class="num" id="keepalive-status" style="color:{% if keepalive_info.running %}var(--turquoise){% else %}var(--red){% endif %};">
+      {% if keepalive_info.running %}已开启{% else %}未开启{% endif %}
+    </div>
+    <div class="label" id="keepalive-detail">
+      {% if keepalive_info.running and keepalive_info.next_refresh_at_epoch %}
+      下次刷新 {{ keepalive_info.seconds_left }} 秒
+      {% elif keepalive_info.running %}
+      初始化中
+      {% else %}
+      DMS 保活
+      {% endif %}
+    </div>
+  </div>
 </div>
 
 <div class="card" style="border-left: 4px solid var(--blue);">
@@ -91,18 +105,58 @@
 <div id="scheduler-status-card"></div>
 
 <script>
-// 定时等候状态
-fetch('/api/status').then(r => r.json()).then(d => {
-  if (d.mode === 'scheduled') {
-    document.getElementById('scheduler-status-card').innerHTML =
-      '<div class="card" style="border-left: 4px solid var(--turquoise); background: #e8f8ee;">' +
-      '<h2>定时等候模式运行中</h2>' +
-      '<p style="color:var(--gray);">下一次触发: ' + (d.next_fire || '计算中...') + '</p>' +
-      '<p style="color:var(--gray); font-size:13px;">10:00 告警+报表 | 17:00 全报表</p>' +
-      '<a href="/mode" class="btn btn-danger btn-sm">停止</a>' +
-      '</div>';
+let keepaliveNextRefreshEpoch = {{ keepalive_info.next_refresh_at_epoch or 0 }};
+let keepaliveRunning = {{ 'true' if keepalive_info.running else 'false' }};
+
+function renderKeepaliveStatus() {
+  var statusEl = document.getElementById('keepalive-status');
+  var detailEl = document.getElementById('keepalive-detail');
+  if (!statusEl || !detailEl) return;
+
+  if (!keepaliveRunning) {
+    statusEl.textContent = '未开启';
+    statusEl.style.color = 'var(--red)';
+    detailEl.textContent = 'DMS 保活';
+    return;
   }
-});
+
+  if (!keepaliveNextRefreshEpoch) {
+    statusEl.textContent = '已开启';
+    statusEl.style.color = 'var(--turquoise)';
+    detailEl.textContent = '初始化中';
+    return;
+  }
+
+  var nowEpoch = Math.floor(Date.now() / 1000);
+  var secondsLeft = Math.max(keepaliveNextRefreshEpoch - nowEpoch, 0);
+  statusEl.textContent = '已开启';
+  statusEl.style.color = 'var(--turquoise)';
+  detailEl.textContent = '下次刷新 ' + secondsLeft + ' 秒';
+}
+
+function refreshDashboardStatus() {
+  fetch('/api/status').then(r => r.json()).then(d => {
+    keepaliveRunning = !!(d.keepalive_info && d.keepalive_info.running);
+    keepaliveNextRefreshEpoch = d.keepalive_info ? (d.keepalive_info.next_refresh_at_epoch || 0) : 0;
+    renderKeepaliveStatus();
+
+    if (d.mode === 'scheduled') {
+      document.getElementById('scheduler-status-card').innerHTML =
+        '<div class="card" style="border-left: 4px solid var(--turquoise); background: #e8f8ee;">' +
+        '<h2>定时等候模式运行中</h2>' +
+        '<p style="color:var(--gray);">下一次触发: ' + (d.next_fire || '计算中...') + '</p>' +
+        '<p style="color:var(--gray); font-size:13px;">10:00 告警+报表 | 17:00 全报表</p>' +
+        '<a href="/mode" class="btn btn-danger btn-sm">停止</a>' +
+        '</div>';
+    }
+  });
+}
+
+// 定时等候状态
+renderKeepaliveStatus();
+refreshDashboardStatus();
+setInterval(renderKeepaliveStatus, 1000);
+setInterval(refreshDashboardStatus, 10000);
 
 // 启动浏览器
 function launchBrowser() {

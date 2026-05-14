@@ -149,7 +149,7 @@ def _get_all_national_recipient_phones(store_config: dict) -> list[str]:
 
 
 def _get_region_recipient_phones(region_name: str, store_config: dict) -> list[str]:
-    """获取区域报表收件人手机号（该区域督导+庄帅+杨永昌）。"""
+    """获取区域报表收件人手机号（该区域督导+控制台配置的全国收件人）。"""
     phones = []
     region_info = store_config.get("regions", {}).get(region_name, {})
     sup = region_info.get("supervisor", {})
