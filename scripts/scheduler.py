@@ -1,5 +1,6 @@
 """调度器 — 定时触发提醒任务。
 
+- 00:00 → 从飞书多维表格同步门店联系人
 - 10:00 → 爬取维修工单 → 导入 → 规则 1 告警 + 规则 3/4 门店/区域报表
 - 17:00 → 爬取维修工单 → 导入 → 规则 3/4 门店/区域报表 + 规则 5 全国报表
 
@@ -39,6 +40,21 @@ PYTHON_BIN = VENV_DIR / "bin" / "python3"
 CRAWL_SCRIPT = Path(__file__).resolve().parent / "crawl_maintenance_orders.py"
 
 DEFAULT_TEST_PHONE = os.getenv("ADMIN_MOBILE", "").replace("+86-", "").replace("+86", "")
+
+
+def run_midnight_contacts_sync() -> dict:
+    """00:00：从飞书多维表格同步门店联系人。"""
+    from bitable_sync import sync_contacts_from_bitable
+
+    print(f"\n{'=' * 50}")
+    print(f"[{beijing_strftime('%Y-%m-%d %H:%M')}] 开始同步飞书门店联系人")
+    print(f"{'=' * 50}")
+    result = sync_contacts_from_bitable()
+    print(
+        f"同步完成: 拉取 {result.get('record_count', 0)} 条，"
+        f"写入门店 {result.get('store_count', 0)} 家"
+    )
+    return result
 
 
 def _override_recipients(results: dict, test_phone: str) -> dict:
@@ -259,23 +275,27 @@ if __name__ == "__main__":
     elif args.evening:
         run_evening_reports(xlsx, skip_crawl=skip_crawl)
     else:
-        # 默认：持续运行定时任务（10:00/17:00自动爬取+告警+报表）
+        # 默认：持续运行定时任务（00:00 同步联系人 / 10:00/17:00 自动爬取+告警+报表）
         print("事故车提醒调度器已启动")
+        print("  00:00 — 同步飞书门店联系人")
         print("  10:00 — 自动爬取 + 超期告警 + 门店/区域报表")
         print("  17:00 — 自动爬取 + 门店/区域报表 + 全国报表")
         print("  按 Ctrl+C 退出")
         print()
 
-        fired = {"10:00": False, "17:00": False}
+        fired = {"00:00": False, "10:00": False, "17:00": False}
         while True:
             now = beijing_now().strftime("%H:%M")
-            if now == "10:00" and not fired["10:00"]:
+            if now == "00:00" and not fired["00:00"]:
+                run_midnight_contacts_sync()
+                fired["00:00"] = True
+            elif now == "10:00" and not fired["10:00"]:
                 run_morning_alerts(skip_crawl=skip_crawl)
                 fired["10:00"] = True
             elif now == "17:00" and not fired["17:00"]:
                 run_evening_reports(skip_crawl=skip_crawl)
                 fired["17:00"] = True
-            elif now not in ("10:00", "17:00"):
+            elif now not in ("00:00", "10:00", "17:00"):
                 # 过了触发点后重置，允许次日再触发
-                fired = {"10:00": False, "17:00": False}
+                fired = {"00:00": False, "10:00": False, "17:00": False}
             time.sleep(30)

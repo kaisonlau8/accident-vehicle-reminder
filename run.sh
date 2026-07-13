@@ -16,6 +16,7 @@ SKIP_CRAWL=""
 TEST_PHONE="${ADMIN_MOBILE:-}"
 CONSOLE=""
 CONSOLE_PORT="9000"
+CONSOLE_HOST="127.0.0.1"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -27,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --evening)   MODE="evening"; shift ;;
     --console)   CONSOLE="yes"; shift ;;
     --port)      CONSOLE_PORT="$2"; shift 2 ;;
+    --host)      CONSOLE_HOST="$2"; shift 2 ;;
     -h|--help)
       echo "用法: ./run.sh [选项]"
       echo ""
@@ -38,6 +40,7 @@ while [[ $# -gt 0 ]]; do
       echo "  --test-phone N  测试手机号（默认读取 ADMIN_MOBILE 环境变量）"
       echo "  --console       启动 Web 控制台（端口9000）"
       echo "  --port N        Web 控制台端口（默认9000，需配合 --console）"
+      echo "  --host ADDR     Web 控制台监听地址（默认127.0.0.1，需配合 --console）"
       echo ""
       echo "示例："
       echo "  ./login.sh                 第一步：打开DMS登录"
@@ -66,11 +69,11 @@ echo "========================================"
 # --console 模式：启动 Web 控制台（所有任务通过控制台触发）
 if [[ "$CONSOLE" == "yes" ]]; then
   echo "  事故车提醒系统 — Web 控制台"
-  echo "  端口: $CONSOLE_PORT"
+  echo "  地址: http://${CONSOLE_HOST}:${CONSOLE_PORT}"
   echo "  通过浏览器控制模式切换和手动触发"
   echo "========================================"
   echo ""
-  exec "$PYTHON" "$ROOT/scripts/web_console.py" --port "$CONSOLE_PORT"
+  exec "$PYTHON" "$ROOT/scripts/web_console.py" --host "$CONSOLE_HOST" --port "$CONSOLE_PORT"
 fi
 
 case "$MODE" in

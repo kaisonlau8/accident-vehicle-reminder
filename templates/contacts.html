@@ -3,18 +3,32 @@
 {% block content %}
 <h2 style="font-size:20px; margin-bottom:16px;">门店联系人</h2>
 
+{% if sync_message %}
+<div class="card" style="border-left:4px solid {% if sync_ok %}var(--turquoise){% else %}var(--red){% endif %};">
+  <p>{{ sync_message }}</p>
+</div>
+{% endif %}
+
 <div class="card">
-  <h2>上传新 list.xlsx</h2>
-  <p style="color:var(--gray); margin-bottom:12px;">上传新的 list.xlsx 会自动备份旧文件并替换。门店编码→区域→督导→提醒人1~4 从此表读取。</p>
-  <form method="post" action="/contacts/upload" enctype="multipart/form-data">
-    <input type="file" name="file" accept=".xlsx" required>
-    <button type="submit" class="btn btn-primary btn-sm">上传替换</button>
+  <h2>从飞书多维表格同步</h2>
+  <p style="color:var(--gray); margin-bottom:12px;">
+    门店编码、区域、督导、提醒人电话 1~4 以飞书多维表格为准。
+    可手动同步，系统也会在每天 00:00（北京时间）自动同步一次。
+  </p>
+  {% if sync_state.synced_at %}
+  <p style="color:var(--gray); margin-bottom:12px; font-size:13px;">
+    最近同步：{{ sync_state.synced_at }}，门店 {{ sync_state.store_count or 0 }} 家
+    {% if sync_state.backup %}（备份 {{ sync_state.backup }}）{% endif %}
+  </p>
+  {% endif %}
+  <form method="post" action="/contacts/sync-bitable">
+    <button type="submit" class="btn btn-primary">立即同步</button>
   </form>
 </div>
 
 <div class="card">
   <h2>门店列表（{{ store_list | length }} 家）</h2>
-  <p style="color:var(--gray); margin-bottom:8px;">联系人信息来自 list.xlsx，直接更新该表即可。</p>
+  <p style="color:var(--gray); margin-bottom:8px;">以下数据来自最近一次同步后的本地缓存（list.xlsx）。</p>
   <table>
     <thead>
       <tr><th>门店编码</th><th>门店名称</th><th>区域</th><th>督导</th><th>督导电话</th><th>提醒人电话1~4</th></tr>

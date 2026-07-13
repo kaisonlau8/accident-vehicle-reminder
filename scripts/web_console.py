@@ -57,6 +57,13 @@ app = Flask(
     static_folder=str(PLUGIN_ROOT / "static"),
 )
 
+
+@app.context_processor
+def _inject_global_template_vars():
+    """所有页面共用的模板变量（导航栏当前模式等）。"""
+    return {"mode": scheduler_state.get("mode", "idle")}
+
+
 # ── 全局状态 ──────────────────────────────────────────────
 task_status = {
     "running": False,
@@ -77,6 +84,12 @@ scheduler_state = {
 keepalive_state = {
     "thread": None,
     "stop": False,
+}
+
+contacts_sync_state = {
+    "thread": None,
+    "stop": False,
+    "fired_date": "",
 }
 
 
@@ -441,6 +454,36 @@ def _start_keepalive_watchdog() -> None:
     thread.start()
 
 
+def _contacts_sync_loop() -> None:
+    """控制台常驻：每天 00:00（北京时间）自动同步飞书多维表格联系人。"""
+    from bitable_sync import sync_contacts_from_bitable
+
+    while not contacts_sync_state["stop"]:
+        now = beijing_now()
+        now_str = now.strftime("%H:%M")
+        today = now.strftime("%Y-%m-%d")
+        if now_str == "00:00" and contacts_sync_state.get("fired_date") != today:
+            print(f"\n{'=' * 50}")
+            print(f"[00:00] 同步飞书门店联系人 — {now.strftime('%Y-%m-%d %H:%M')}")
+            print(f"{'=' * 50}")
+            try:
+                sync_contacts_from_bitable()
+            except Exception as exc:
+                print(f"[ERROR] 00:00 联系人同步异常: {exc}")
+            contacts_sync_state["fired_date"] = today
+        time.sleep(30)
+
+
+def _start_contacts_sync_watchdog() -> None:
+    thread = contacts_sync_state.get("thread")
+    if thread and thread.is_alive():
+        return
+    contacts_sync_state["stop"] = False
+    thread = threading.Thread(target=_contacts_sync_loop, daemon=True)
+    contacts_sync_state["thread"] = thread
+    thread.start()
+
+
 def _format_rule_recipients(rule: dict, stores_config: dict) -> str:
     """将规则原始 recipients 转成控制台友好的展示文本。"""
     role_labels = {
@@ -722,6 +765,8 @@ def reports_download(filename):
 @app.route("/contacts")
 def contacts_page():
     """门店联系人页面。"""
+    from bitable_sync import load_sync_state
+
     stores_config = load_stores_config()
     stores = stores_config.get("stores", {})
     regions = stores_config.get("regions", {})
@@ -746,13 +791,35 @@ def contacts_page():
         if str(phone or "").strip()
     ]
 
+    sync_ok = request.args.get("sync_ok")
+    sync_message = request.args.get("sync_msg", "")
     return render_template(
         "contacts.html",
         store_list=store_list,
         regions=regions,
         national=national,
         national_list=national_list,
+        sync_state=load_sync_state(),
+        sync_ok=sync_ok == "1",
+        sync_message=sync_message,
     )
+
+
+@app.route("/contacts/sync-bitable", methods=["POST"])
+def contacts_sync_bitable():
+    """手动从飞书多维表格同步门店联系人。"""
+    from bitable_sync import sync_contacts_from_bitable
+
+    try:
+        result = sync_contacts_from_bitable()
+        msg = (
+            f"同步成功：拉取 {result.get('record_count', 0)} 条，"
+            f"写入门店 {result.get('store_count', 0)} 家"
+            + (f"，已备份 {result.get('backup')}" if result.get("backup") else "")
+        )
+        return redirect(url_for("contacts_page", sync_ok="1", sync_msg=msg))
+    except Exception as exc:
+        return redirect(url_for("contacts_page", sync_ok="0", sync_msg=f"同步失败：{exc}"))
 
 
 @app.route("/clear-cache")
@@ -1152,18 +1219,19 @@ def _run_evening(skip_crawl=False):
 
 
 def _run_scheduler_loop(skip_crawl=False):
-    """定时等候模式：后台常驻，10:00/17:00 自动触发任务。"""
+    """定时等候模式：后台常驻，00:00/10:00/17:00 自动触发任务。"""
     scheduler_state["scheduler_stop"] = False
     scheduler_state["started_at"] = beijing_strftime("%Y-%m-%d %H:%M:%S")
 
     print("[定时等候模式] 调度器已启动（北京时间 UTC+8）")
+    print("  00:00 — 同步飞书门店联系人")
     print("  10:00 — 自动爬取 + 超期告警 + 门店/区域报表")
     print("  17:00 — 自动爬取 + 门店/区域报表 + 全国报表")
     print("  通过 Web 控制台停止")
 
-    from scheduler import run_morning_alerts, run_evening_reports
+    from scheduler import run_morning_alerts, run_evening_reports, run_midnight_contacts_sync
 
-    fired = {"10:00": False, "17:00": False}
+    fired = {"00:00": False, "10:00": False, "17:00": False}
     while not scheduler_state["scheduler_stop"]:
         now = beijing_now()
         now_str = now.strftime("%H:%M")
@@ -1174,9 +1242,20 @@ def _run_scheduler_loop(skip_crawl=False):
         elif now_str < "17:00":
             scheduler_state["next_fire"] = f"今天 17:00（北京时间 {now_str}）"
         else:
-            scheduler_state["next_fire"] = f"明天 10:00（北京时间 {now_str}）"
+            scheduler_state["next_fire"] = f"明天 00:00（北京时间 {now_str}）"
 
-        if now_str == "10:00" and not fired["10:00"]:
+        if now_str == "00:00" and not fired["00:00"]:
+            print(f"\n{'=' * 50}")
+            print(f"[00:00] 定时触发 — {now.strftime('%Y-%m-%d %H:%M')}")
+            print(f"{'=' * 50}")
+            try:
+                run_midnight_contacts_sync()
+            except Exception as exc:
+                print(f"[ERROR] 00:00 任务异常: {exc}")
+            fired["00:00"] = True
+            contacts_sync_state["fired_date"] = now.strftime("%Y-%m-%d")
+
+        elif now_str == "10:00" and not fired["10:00"]:
             print(f"\n{'=' * 50}")
             print(f"[10:00] 定时触发 — {now.strftime('%Y-%m-%d %H:%M')}")
             print(f"{'=' * 50}")
@@ -1196,9 +1275,9 @@ def _run_scheduler_loop(skip_crawl=False):
                 print(f"[ERROR] 17:00 任务异常: {exc}")
             fired["17:00"] = True
 
-        elif now_str not in ("10:00", "17:00"):
+        elif now_str not in ("00:00", "10:00", "17:00"):
             # 过了触发点后重置，允许次日再触发
-            fired = {"10:00": False, "17:00": False}
+            fired = {"00:00": False, "10:00": False, "17:00": False}
 
         time.sleep(30)
 
@@ -1239,5 +1318,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     _start_keepalive_watchdog()
+    _start_contacts_sync_watchdog()
     print(f"事故车提醒系统 Web 控制台启动: http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=False)
