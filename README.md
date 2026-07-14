@@ -137,6 +137,16 @@ Web 控制台启动后会监控浏览器会话。只要 DMS 页面在线，控�
 
 仪表盘会显示 DMS 保活状态和“距离下一次刷新还有 xx 秒”。导出期间会写入 `.runtime/exporting.lock`，保活进程检测到锁文件后会跳过刷新，避免打断下载。
 
+### 与投诉爬虫共享浏览器
+
+可与 `dfmc-dms-crawler` 共用同一 Chrome 窗口与保活（错峰爬不同页面）：
+
+```bash
+export DFMC_DMS_SESSION_HOME="$HOME/dms-shared-session"
+```
+
+详见 [docs/shared-browser-session.md](docs/shared-browser-session.md)。
+
 DMS 爬取步骤按页面真实交互顺序执行：
 
 1. 填写到店日期。

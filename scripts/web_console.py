@@ -35,6 +35,7 @@ from message_dispatcher import (
 from dfmc_browser_utils import (
     DEFAULT_BROWSER_CANDIDATES, detect_browser, find_free_port,
     write_browser_state, read_browser_state, process_is_running,
+    get_runtime_dir, get_browser_profile_dir, get_session_home, SESSION_HOME_ENV,
 )
 from time_utils import beijing_now, beijing_strftime
 
@@ -47,7 +48,9 @@ FOLLOWUP_DIR = DATA_DIR / "followup"
 REPAIR_ORDERS_DIR = DATA_DIR / "repair_orders"
 REPORTS_DIR = DATA_DIR / "reports"
 OUTPUT_DIR = PLUGIN_ROOT / "output"
-RUNTIME_DIR = PLUGIN_ROOT / ".runtime"
+RUNTIME_DIR = get_runtime_dir(PLUGIN_ROOT)
+BROWSER_PROFILE_DIR = get_browser_profile_dir(PLUGIN_ROOT)
+SESSION_HOME = get_session_home(PLUGIN_ROOT)
 LIST_XLSX = PLUGIN_ROOT / "list.xlsx"
 ALERT_HISTORY_PATH = FOLLOWUP_DIR / "alert_history.json"
 
@@ -190,7 +193,7 @@ def _dms_page_alive(port: int) -> bool:
 def _find_existing_browser() -> dict | None:
     """扫描系统中使用本项目 profile 目录的浏览器进程，返回状态信息。"""
     import subprocess
-    profile_dir = str(PLUGIN_ROOT / ".browser-profile")
+    profile_dir = str(BROWSER_PROFILE_DIR)
     try:
         result = subprocess.run(
             ["ps", "-eo", "pid,args"],
@@ -1010,7 +1013,7 @@ def api_browser_launch():
         return jsonify({"error": str(exc)}), 400
 
     port = find_free_port()
-    browser_profile_dir = PLUGIN_ROOT / ".browser-profile"
+    browser_profile_dir = BROWSER_PROFILE_DIR
     target_url = "https://m-dms.dfmc.com.cn"
 
     cmd = [

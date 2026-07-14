@@ -1,16 +1,36 @@
 #!/usr/bin/env python3
-"""Shared browser utilities for DMS crawler scripts."""
+"""Shared browser utilities for accident-vehicle-reminder scripts.
+
+Session sharing
+---------------
+Multiple crawlers (e.g. complaints + maintenance orders) can reuse ONE Chrome
+window and ONE keepalive process by pointing at the same session home:
+
+  export DFMC_DMS_SESSION_HOME=/path/to/shared-dms-session
+
+Layout under the session home (defaults to the plugin root when unset):
+
+  .browser-profile/          Chrome --user-data-dir
+  .runtime/
+    browser-state.json       CDP port / pid
+    keepalive-state.json     keepalive status
+    exporting.lock           busy lock (keepalive skips refresh; crawlers mutex)
+"""
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import socket
+import subprocess
 import time
+import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
-from playwright.sync_api import Browser, Error, Playwright, sync_playwright
+from playwright.sync_api import Browser, Error, Playwright
 
 
 DEFAULT_TARGET_URL = "https://m-dms.dfmc.com.cn"
@@ -19,6 +39,8 @@ DEFAULT_BROWSER_CANDIDATES = {
     "edge": "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
 }
 DEFAULT_STATE_FILE_NAME = "browser-state.json"
+EXPORT_LOCK_NAME = "exporting.lock"
+SESSION_HOME_ENV = "DFMC_DMS_SESSION_HOME"
 
 
 def detect_browser(preferred: str, explicit_path: Optional[str]) -> Path:
@@ -54,14 +76,40 @@ def find_free_port() -> int:
     return port
 
 
+def get_session_home(plugin_root: Path) -> Path:
+    """Resolve the shared DMS session home.
+
+    If DFMC_DMS_SESSION_HOME is set, all plugins/crawlers using that path share
+    one browser profile, state file, keepalive, and export lock.
+    Otherwise fall back to the calling plugin root (isolated session).
+    """
+    env = (os.environ.get(SESSION_HOME_ENV) or "").strip()
+    if env:
+        home = Path(env).expanduser().resolve()
+    else:
+        home = plugin_root.resolve()
+    home.mkdir(parents=True, exist_ok=True)
+    return home
+
+
 def get_runtime_dir(plugin_root: Path) -> Path:
-    runtime_dir = plugin_root / ".runtime"
+    runtime_dir = get_session_home(plugin_root) / ".runtime"
     runtime_dir.mkdir(parents=True, exist_ok=True)
     return runtime_dir
 
 
+def get_browser_profile_dir(plugin_root: Path) -> Path:
+    profile_dir = get_session_home(plugin_root) / ".browser-profile"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    return profile_dir
+
+
 def get_default_state_file(plugin_root: Path) -> Path:
     return get_runtime_dir(plugin_root) / DEFAULT_STATE_FILE_NAME
+
+
+def get_export_lock_path(plugin_root: Path) -> Path:
+    return get_runtime_dir(plugin_root) / EXPORT_LOCK_NAME
 
 
 def write_browser_state(state_file: Path, payload: dict[str, Any]) -> None:
@@ -89,6 +137,19 @@ def cdp_is_ready(port: int) -> bool:
         return False
 
 
+def dms_page_alive(port: int) -> bool:
+    """Check whether a DMS page tab is open via CDP /json/list."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as resp:
+            targets = json.loads(resp.read().decode("utf-8"))
+            return any(
+                t.get("type") == "page" and "m-dms.dfmc.com.cn" in (t.get("url") or "")
+                for t in targets
+            )
+    except Exception:
+        return False
+
+
 def connect_browser_over_cdp(playwright: Playwright, port: int, timeout_seconds: float = 15.0) -> Browser:
     deadline = time.monotonic() + timeout_seconds
     last_error: Optional[Exception] = None
@@ -101,16 +162,97 @@ def connect_browser_over_cdp(playwright: Playwright, port: int, timeout_seconds:
     raise RuntimeError(f"Failed to connect to Chrome over CDP on port {port}: {last_error}")
 
 
-def recover_browser_state(state_file: Path, plugin_root: Path) -> Optional[int]:
-    """Try to recover browser state by scanning for a running CDP-enabled browser.
+def _read_lock_payload(lock_file: Path) -> dict[str, Any]:
+    if not lock_file.exists():
+        return {}
+    raw = lock_file.read_text(encoding="utf-8").strip()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+    # Legacy plain-text lock
+    return {"owner": "unknown", "pid": 0, "raw": raw}
 
-    Looks for processes matching the project's --user-data-dir and extracts the
-    CDP port from their command line. If found and CDP is responsive, rewrites
-    the state file and returns the port.
+
+def _lock_is_active(payload: dict[str, Any]) -> bool:
+    pid = int(payload.get("pid") or 0)
+    if pid > 0:
+        return process_is_running(pid)
+    # Legacy lock without pid — treat as active while file exists
+    return bool(payload)
+
+
+def acquire_export_lock(
+    plugin_root: Path,
+    owner: str,
+    *,
+    timeout_seconds: float = 0,
+    poll_interval: float = 2.0,
+) -> Path:
+    """Acquire the shared session busy lock.
+
+    Purpose:
+    - Tell keepalive to skip page refresh while a crawler is exporting.
+    - Prevent two crawlers from driving the same DMS tab at once.
+
+    timeout_seconds=0: fail immediately if another live owner holds the lock.
+    timeout_seconds>0: wait up to that many seconds for the lock.
     """
-    import subprocess
+    lock_file = get_export_lock_path(plugin_root)
+    deadline = time.monotonic() + max(timeout_seconds, 0)
+    while True:
+        payload = _read_lock_payload(lock_file) if lock_file.exists() else {}
+        if lock_file.exists() and _lock_is_active(payload):
+            holder = payload.get("owner") or "unknown"
+            holder_pid = int(payload.get("pid") or 0)
+            if timeout_seconds <= 0 or time.monotonic() >= deadline:
+                raise RuntimeError(
+                    f"DMS session is busy: lock held by '{holder}' (pid={holder_pid}). "
+                    "Wait for the other crawler to finish, or remove stale lock: "
+                    f"{lock_file}"
+                )
+            print(f"  Session busy ({holder}), waiting for lock...")
+            time.sleep(poll_interval)
+            continue
 
-    browser_profile_dir = plugin_root / ".browser-profile"
+        # Stale or missing — take ownership
+        lock_file.parent.mkdir(parents=True, exist_ok=True)
+        lock_file.write_text(
+            json.dumps(
+                {
+                    "owner": owner,
+                    "pid": os.getpid(),
+                    "acquiredAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return lock_file
+
+
+def release_export_lock(lock_file: Path, *, owner: str = "") -> None:
+    """Release the session busy lock if we still own it (or owner check skipped)."""
+    if not lock_file.exists():
+        return
+    if owner:
+        payload = _read_lock_payload(lock_file)
+        current_owner = str(payload.get("owner") or "")
+        current_pid = int(payload.get("pid") or 0)
+        if current_owner and current_owner != owner and current_pid and process_is_running(current_pid):
+            return
+    lock_file.unlink(missing_ok=True)
+
+
+def recover_browser_state(state_file: Path, plugin_root: Path) -> Optional[int]:
+    """Try to recover browser state by scanning for a running CDP-enabled browser."""
+    browser_profile_dir = get_browser_profile_dir(plugin_root)
     try:
         result = subprocess.run(
             ["ps", "-eo", "pid=,command="],
@@ -135,7 +277,6 @@ def recover_browser_state(state_file: Path, plugin_root: Path) -> Optional[int]:
             continue
 
         cmd = parts[1]
-        import re
         m = re.search(r"--remote-debugging-port=(\d+)", cmd)
         if not m:
             continue
@@ -144,23 +285,20 @@ def recover_browser_state(state_file: Path, plugin_root: Path) -> Optional[int]:
         if not cdp_is_ready(port):
             continue
 
-        # Determine browser executable from command line
         executable = ""
-        for name, path in DEFAULT_BROWSER_CANDIDATES.items():
+        for _name, path in DEFAULT_BROWSER_CANDIDATES.items():
             if path in cmd:
                 executable = path
                 break
 
-        # Found a live browser — rebuild state file
         payload = {
             "port": port,
             "pid": pid,
             "browserExecutable": executable,
             "browserProfileDir": str(browser_profile_dir),
             "targetUrl": DEFAULT_TARGET_URL,
-            "startedAt": __import__("datetime").datetime.now(
-                __import__("datetime").timezone.utc
-            ).isoformat().replace("+00:00", "Z"),
+            "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "sessionHome": str(get_session_home(plugin_root)),
         }
         write_browser_state(state_file, payload)
         print(f"  [RECOVERED] Browser state rebuilt: pid={pid}, port={port}")
@@ -169,16 +307,14 @@ def recover_browser_state(state_file: Path, plugin_root: Path) -> Optional[int]:
     return None
 
 
-def ensure_cdp_browser_running(state_file: Path) -> int:
-    """Read browser state and validate the browser process is alive with CDP ready.
-
-    If the state file is missing or stale, attempts to recover by scanning for
-    a running CDP browser with the project's user-data-dir.
+def ensure_cdp_browser_running(state_file: Path, plugin_root: Optional[Path] = None) -> int:
+    """Validate browser CDP is ready; recover from profile process if needed.
 
     Returns the CDP port. Raises if the browser is not running.
     """
-    # Try to recover from a running browser even if state file is missing/stale
-    plugin_root = state_file.parent.parent  # .runtime/ -> project root
+    if plugin_root is None:
+        # Prefer session home = parent of .runtime/
+        plugin_root = state_file.parent.parent
 
     if not state_file.exists():
         print("  Browser state file not found, attempting recovery...")
@@ -187,7 +323,7 @@ def ensure_cdp_browser_running(state_file: Path) -> int:
             return port
         raise FileNotFoundError(
             f"No browser state found at {state_file} and no running browser detected. "
-            "Start the login browser first: scripts/open_browser_for_login.sh"
+            "Start the login browser first (Web console or open_browser_for_login.sh)."
         )
 
     payload = read_browser_state(state_file)

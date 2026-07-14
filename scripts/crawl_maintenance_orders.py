@@ -33,31 +33,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from dfmc_browser_utils import (
     DEFAULT_TARGET_URL,
+    acquire_export_lock,
     connect_browser_over_cdp,
     ensure_cdp_browser_running,
     find_dms_page,
     get_default_state_file,
-    get_runtime_dir,
+    get_export_lock_path,
+    get_session_home,
+    release_export_lock,
 )
 from time_utils import beijing_strftime, beijing_today
 
 MAINTENANCE_ORDER_ROUTE = "/aftermarketMange/maintenanceManagement/maintenanceOrderSearch"
 DMS_HOST = "m-dms.dfmc.com.cn"
-EXPORT_LOCK_NAME = "exporting.lock"
+CRAWLER_OWNER = "crawl_maintenance_orders"
 
 
 def date_str(d: date) -> str:
     return d.strftime("%Y-%m-%d")
-
-
-def acquire_export_lock(plugin_root: Path) -> Path:
-    lock_file = get_runtime_dir(plugin_root) / EXPORT_LOCK_NAME
-    lock_file.write_text(f"locked at {beijing_strftime('%Y-%m-%dT%H:%M:%S%z')}\n", encoding="utf-8")
-    return lock_file
-
-
-def release_export_lock(lock_file: Path) -> None:
-    lock_file.unlink(missing_ok=True)
 
 
 def validate_logged_in(page: Page) -> None:
@@ -452,7 +445,8 @@ def main() -> int:
     end_date = today
     print(f"Date range: {date_str(start_date)} to {date_str(end_date)} ({args.days} days)")
 
-    cdp_port = ensure_cdp_browser_running(state_file)
+    print(f"Session home: {get_session_home(plugin_root)}")
+    cdp_port = ensure_cdp_browser_running(state_file, plugin_root=plugin_root)
     print(f"Browser CDP port: {cdp_port}")
 
     keepalive_proc: Optional[subprocess.Popen[Any]] = None
@@ -491,19 +485,19 @@ def main() -> int:
             print("Maintenance order page loaded.")
 
             cdp_session = context.new_cdp_session(page)
-            lock_file = acquire_export_lock(plugin_root)
+            lock_file = acquire_export_lock(plugin_root, CRAWLER_OWNER)
             try:
                 filepath, status = run_export_flow(
                     page, cdp_session, output_dir, start_date, end_date, today, args.dry_run
                 )
             finally:
-                release_export_lock(lock_file)
+                release_export_lock(lock_file, owner=CRAWLER_OWNER)
 
     except Exception as exc:
         print(f"Fatal error: {exc}")
         status = "fatal_error"
         try:
-            release_export_lock(get_runtime_dir(plugin_root) / EXPORT_LOCK_NAME)
+            release_export_lock(get_export_lock_path(plugin_root), owner=CRAWLER_OWNER)
         except Exception:
             pass
 

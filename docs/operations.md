@@ -73,6 +73,23 @@ cat .runtime/keepalive-state.json
 ps -eo pid=,stat=,command= | rg keepalive_browser.py
 ```
 
+## 多爬虫共享浏览器会话
+
+本插件的维修工单爬虫，可与 `dfmc-dms-crawler` 的投诉爬虫共用 **一个** 浏览器窗口和 **一套** 保活。
+
+```bash
+export DFMC_DMS_SESSION_HOME="$HOME/dms-shared-session"
+./run.sh --console   # 登录 + 保活
+# 错峰执行 crawl_maintenance_orders / crawl_complaints
+```
+
+完整说明：
+
+- [shared-browser-session.md](shared-browser-session.md)
+- 同级插件文档：`plugins/dfmc-dms-crawler/docs/shared-browser-session.md`
+
+未设置 `DFMC_DMS_SESSION_HOME` 时，会话目录仍为本插件下的 `.browser-profile` / `.runtime`。
+
 ## 数据检查
 
 爬取完成后，原始 Excel 位于：

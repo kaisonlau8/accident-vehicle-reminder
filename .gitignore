@@ -38,6 +38,7 @@ list.xlsx
 .vscode/
 *.swp
 *.swo
+*.code-workspace
 
 # Claude Code
 .claude/

@@ -17,14 +17,13 @@ from pathlib import Path
 from playwright.sync_api import Error, sync_playwright
 
 from dfmc_browser_utils import (
+    EXPORT_LOCK_NAME,
     connect_browser_over_cdp,
     ensure_cdp_browser_running,
     get_default_state_file,
     get_runtime_dir,
+    get_session_home,
 )
-
-
-EXPORT_LOCK_NAME = "exporting.lock"
 
 
 def _write_status(status_file: Path, payload: dict) -> None:
@@ -47,7 +46,8 @@ def main() -> int:
     status_file = Path(args.status_file).expanduser().resolve() if args.status_file else runtime_dir / "keepalive-state.json"
     started_at = int(time.time())
 
-    cdp_port = ensure_cdp_browser_running(state_file)
+    cdp_port = ensure_cdp_browser_running(state_file, plugin_root=plugin_root)
+    print(f"Session home: {get_session_home(plugin_root)}")
     print(f"Browser alive on CDP port {cdp_port}. Interval: {args.interval}s")
     print(f"Lock file: {lock_file} (refresh will be skipped while lock exists)")
     _write_status(status_file, {
