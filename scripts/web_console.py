@@ -82,6 +82,7 @@ scheduler_state = {
     "scheduler_thread": None,
     "scheduler_stop": False,  # 用于停止定时调度线程
     "next_fire": "",          # 下一次触发时间描述
+    "skip_crawl": False,      # 定时触发时是否跳过 DMS 爬取
 }
 
 keepalive_state = {
@@ -575,6 +576,7 @@ def dashboard():
 
     # 当前运行模式
     mode = scheduler_state["mode"]
+    skip_crawl = bool(scheduler_state.get("skip_crawl", False))
 
     return render_template("dashboard.html",
         browser=browser, browser_ok=browser_ok,
@@ -583,6 +585,7 @@ def dashboard():
         Path=Path,
         snap_info=snap_info, history_info=history_info,
         recent_logs=recent_logs, mode=mode,
+        skip_crawl=skip_crawl,
         task_status=task_status,
     )
 
@@ -622,6 +625,8 @@ def mode_page():
 
         elif action == "scheduled":
             skip_crawl = request.form.get("skip_crawl") == "on"
+            if scheduler_state["mode"] == "scheduled":
+                _stop_scheduler()
             # 启动后台调度线程
             t = threading.Thread(
                 target=_run_scheduler_loop,
@@ -629,6 +634,7 @@ def mode_page():
                 daemon=True,
             )
             scheduler_state["mode"] = "scheduled"
+            scheduler_state["skip_crawl"] = bool(skip_crawl)
             scheduler_state["scheduler_thread"] = t
             t.start()
             return redirect(url_for("dashboard"))
@@ -638,9 +644,14 @@ def mode_page():
                 _stop_scheduler()
             else:
                 scheduler_state["mode"] = "idle"
+                scheduler_state["skip_crawl"] = False
             return redirect(url_for("dashboard"))
 
-    return render_template("mode.html", mode=scheduler_state["mode"])
+    return render_template(
+        "mode.html",
+        mode=scheduler_state["mode"],
+        skip_crawl=scheduler_state.get("skip_crawl", False),
+    )
 
 
 @app.route("/rules")
@@ -928,6 +939,7 @@ def api_status():
         "alert_vin_count": len(alert_history),
         "next_fire": scheduler_state.get("next_fire", ""),
         "scheduler_started": scheduler_state.get("started_at", ""),
+        "skip_crawl": bool(scheduler_state.get("skip_crawl", False)),
         "keepalive_running": keepalive_info["running"],
         "keepalive_info": keepalive_info,
     })
@@ -1101,13 +1113,14 @@ def api_browser_disconnect():
 def api_start_scheduler():
     """启动定时等候模式。"""
     if scheduler_state["mode"] == "scheduled":
-        return jsonify({"error": "调度器已在运行"})
-    skip_crawl = request.json.get("skip_crawl", False) if request.json else False
+        return jsonify({"error": "调度器已在运行", "skip_crawl": bool(scheduler_state.get("skip_crawl", False))})
+    skip_crawl = bool(request.json.get("skip_crawl", False)) if request.json else False
     t = threading.Thread(target=_run_scheduler_loop, kwargs={"skip_crawl": skip_crawl}, daemon=True)
     scheduler_state["mode"] = "scheduled"
+    scheduler_state["skip_crawl"] = skip_crawl
     scheduler_state["scheduler_thread"] = t
     t.start()
-    return jsonify({"started": True})
+    return jsonify({"started": True, "skip_crawl": skip_crawl})
 
 
 @app.route("/api/stop-scheduler", methods=["POST"])
@@ -1225,11 +1238,14 @@ def _run_scheduler_loop(skip_crawl=False):
     """定时等候模式：后台常驻，00:00/10:00/17:00 自动触发任务。"""
     scheduler_state["scheduler_stop"] = False
     scheduler_state["started_at"] = beijing_strftime("%Y-%m-%d %H:%M:%S")
+    scheduler_state["skip_crawl"] = bool(skip_crawl)
 
+    crawl_label = "跳过爬取，使用最新快照" if skip_crawl else "自动爬取"
     print("[定时等候模式] 调度器已启动（北京时间 UTC+8）")
+    print(f"  爬取策略 — {crawl_label}")
     print("  00:00 — 同步飞书门店联系人")
-    print("  10:00 — 自动爬取 + 超期告警 + 门店/区域报表")
-    print("  17:00 — 自动爬取 + 门店/区域报表 + 全国报表")
+    print(f"  10:00 — {crawl_label} + 超期告警 + 门店/区域报表")
+    print(f"  17:00 — {crawl_label} + 门店/区域报表 + 全国报表")
     print("  通过 Web 控制台停止")
 
     from scheduler import run_morning_alerts, run_evening_reports, run_midnight_contacts_sync
@@ -1285,6 +1301,7 @@ def _run_scheduler_loop(skip_crawl=False):
         time.sleep(30)
 
     scheduler_state["next_fire"] = ""
+    scheduler_state["skip_crawl"] = False
     print("[定时等候模式] 调度器已停止")
 
 
@@ -1293,6 +1310,7 @@ def _stop_scheduler():
     scheduler_state["scheduler_stop"] = True
     scheduler_state["mode"] = "idle"
     scheduler_state["next_fire"] = ""
+    scheduler_state["skip_crawl"] = False
 
 
 def _crawl_only():

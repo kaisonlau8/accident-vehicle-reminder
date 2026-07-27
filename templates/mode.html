@@ -20,6 +20,14 @@
   <h2>定时等候模式运行中</h2>
   <p style="margin-bottom:8px;">调度器已启动，等待 10:00 和 17:00 自动触发任务。</p>
   <p style="color:var(--gray);" id="next-fire-info">下一次触发: 加载中...</p>
+  <p style="margin-bottom:12px;">
+    爬取策略:
+    {% if skip_crawl %}
+      <span style="color:var(--orange); font-weight:600;">跳过爬取（使用最新快照）</span>
+    {% else %}
+      <span style="color:var(--turquoise); font-weight:600;">自动爬取 DMS</span>
+    {% endif %}
+  </p>
   <form method="post" action="/mode">
     <input type="hidden" name="action" value="stop">
     <button type="submit" class="btn btn-danger">停止定时等候</button>
