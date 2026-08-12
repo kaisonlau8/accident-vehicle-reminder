@@ -33,9 +33,20 @@ from message_dispatcher import (
     dispatch_region_reports, dispatch_national_report,
 )
 from dfmc_browser_utils import (
-    DEFAULT_BROWSER_CANDIDATES, detect_browser, find_free_port,
-    write_browser_state, read_browser_state, process_is_running,
-    get_runtime_dir, get_browser_profile_dir, get_session_home, SESSION_HOME_ENV,
+    DEFAULT_BROWSER_CANDIDATES,
+    DEFAULT_BROWSER_NAME,
+    browser_label,
+    detect_browser,
+    find_free_port,
+    write_browser_state,
+    read_browser_state,
+    process_is_running,
+    get_runtime_dir,
+    get_browser_profile_dir,
+    get_session_home,
+    is_cdp_browser_command,
+    resolve_executable_from_command,
+    SESSION_HOME_ENV,
 )
 from time_utils import beijing_now, beijing_strftime
 
@@ -204,9 +215,7 @@ def _find_existing_browser() -> dict | None:
             line = line.strip()
             if profile_dir not in line:
                 continue
-            if "Helper" in line:
-                continue
-            if "Google Chrome" not in line and "Microsoft Edge" not in line:
+            if not is_cdp_browser_command(line):
                 continue
 
             parts = line.split(None, 1)
@@ -220,11 +229,10 @@ def _find_existing_browser() -> dict | None:
                     break
 
             if new_port and _cdp_port_alive(new_port):
-                executable = DEFAULT_BROWSER_CANDIDATES["chrome"] if "Google Chrome" in cmd else DEFAULT_BROWSER_CANDIDATES.get("edge", "")
                 return {
                     "pid": new_pid,
                     "port": new_port,
-                    "browserExecutable": executable,
+                    "browserExecutable": resolve_executable_from_command(cmd),
                     "browserProfileDir": profile_dir,
                     "targetUrl": "https://m-dms.dfmc.com.cn",
                     "startedAt": "",
@@ -513,24 +521,26 @@ def _format_rule_recipients(rule: dict, stores_config: dict) -> str:
 
 
 def _detect_available_browsers() -> list[dict]:
-    """扫描本地可用浏览器，返回列表。"""
+    """扫描本地可用浏览器，返回列表（Chromium 优先）。"""
+    env_path = os.environ.get("DFMC_DMS_BROWSER_EXECUTABLE")
+    env_default = bool(env_path and Path(env_path).exists())
     browsers = []
+    if env_default:
+        browsers.append({
+            "name": "custom",
+            "path": env_path,
+            "available": True,
+            "label": f"Chromium ({Path(env_path).name})",
+            "default": True,
+        })
     for name, path in DEFAULT_BROWSER_CANDIDATES.items():
         p = Path(path)
         browsers.append({
             "name": name,
             "path": path,
             "available": p.exists(),
-            "label": "Chrome" if name == "chrome" else "Edge" if name == "edge" else name,
-        })
-    # 也检查环境变量指定的浏览器
-    env_path = os.environ.get("DFMC_DMS_BROWSER_EXECUTABLE")
-    if env_path and Path(env_path).exists():
-        browsers.append({
-            "name": "custom",
-            "path": env_path,
-            "available": True,
-            "label": f"自定义 ({Path(env_path).name})",
+            "label": browser_label(name),
+            "default": (not env_default) and name == DEFAULT_BROWSER_NAME,
         })
     return browsers
 
@@ -992,7 +1002,7 @@ def api_crawl():
 @app.route("/api/browser/launch", methods=["POST"])
 def api_browser_launch():
     """启动指定浏览器用于 DMS 登录。如果已有浏览器在运行，直接使用。"""
-    browser_name = request.json.get("browser", "chrome") if request.json else "chrome"
+    browser_name = request.json.get("browser", DEFAULT_BROWSER_NAME) if request.json else DEFAULT_BROWSER_NAME
 
     # 先检查是否已有浏览器在运行（自动恢复逻辑会更新状态）
     existing_state = _load_browser_state()

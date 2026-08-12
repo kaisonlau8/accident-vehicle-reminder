@@ -15,59 +15,29 @@ from pathlib import Path
 from typing import Any, Optional
 
 
-DEFAULT_TARGET_URL = "https://m-dms.dfmc.com.cn"
-DEFAULT_BROWSER_CANDIDATES = {
-    "chrome": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "edge": "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-}
-DEFAULT_STATE_FILE_NAME = "browser-state.json"
+import sys
+
+from dotenv import load_dotenv
+
+PLUGIN_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(PLUGIN_ROOT / ".env")
+sys.path.insert(0, str(PLUGIN_ROOT / "scripts"))
+
+from dfmc_browser_utils import (  # noqa: E402
+    DEFAULT_BROWSER_CANDIDATES,
+    DEFAULT_BROWSER_NAME,
+    DEFAULT_TARGET_URL,
+    detect_browser,
+    find_free_port,
+    get_browser_profile_dir,
+    get_default_state_file,
+    get_session_home,
+    write_browser_state,
+)
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-def detect_browser(preferred: str, explicit_path: Optional[str]) -> Path:
-    candidates: list[tuple[str, Optional[str]]] = []
-    if explicit_path:
-        candidates.append(("explicit", explicit_path))
-    env_browser = os.environ.get("DFMC_DMS_BROWSER_EXECUTABLE")
-    if env_browser:
-        candidates.append(("env", env_browser))
-    if preferred in DEFAULT_BROWSER_CANDIDATES:
-        candidates.append((preferred, DEFAULT_BROWSER_CANDIDATES[preferred]))
-    for name, path in DEFAULT_BROWSER_CANDIDATES.items():
-        if name != preferred:
-            candidates.append((name, path))
-
-    for _, path in candidates:
-        if path and Path(path).exists():
-            return Path(path)
-
-    raise FileNotFoundError("No supported browser executable was found.")
-
-
-def find_free_port() -> int:
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.bind(("127.0.0.1", 0))
-    port = sock.getsockname()[1]
-    sock.close()
-    return port
-
-
-def get_runtime_dir(plugin_root: Path) -> Path:
-    runtime_dir = plugin_root / ".runtime"
-    runtime_dir.mkdir(parents=True, exist_ok=True)
-    return runtime_dir
-
-
-def get_default_state_file(plugin_root: Path) -> Path:
-    return get_runtime_dir(plugin_root) / DEFAULT_STATE_FILE_NAME
-
-
-def write_browser_state(state_file: Path, payload: dict[str, Any]) -> None:
-    state_file.parent.mkdir(parents=True, exist_ok=True)
-    state_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 def process_is_running(pid: int) -> bool:
@@ -185,11 +155,11 @@ def main() -> int:
     parser.add_argument("--target-url", default=DEFAULT_TARGET_URL)
     parser.add_argument("--browser-profile-dir", default="")
     parser.add_argument("--state-file", default="")
-    parser.add_argument("--browser", choices=sorted(DEFAULT_BROWSER_CANDIDATES.keys()), default="chrome")
+    parser.add_argument("--browser", choices=sorted(DEFAULT_BROWSER_CANDIDATES.keys()), default=DEFAULT_BROWSER_NAME)
     parser.add_argument("--browser-executable", default="")
     args = parser.parse_args()
 
-    plugin_root = Path(__file__).resolve().parent.parent
+    plugin_root = PLUGIN_ROOT
     state_file = (
         Path(args.state_file).expanduser().resolve()
         if args.state_file
@@ -198,7 +168,7 @@ def main() -> int:
     browser_profile_dir = (
         Path(args.browser_profile_dir).expanduser().resolve()
         if args.browser_profile_dir
-        else plugin_root / ".browser-profile"
+        else get_browser_profile_dir(plugin_root)
     )
     browser_executable = detect_browser(args.browser, args.browser_executable or None)
 
@@ -255,11 +225,12 @@ def main() -> int:
     time.sleep(1)
     activate_browser_window(browser_executable)
     print(f"Opened login browser: {browser_executable}")
+    print(f"Session home: {get_session_home(plugin_root)}")
     print(f"State file: {state_file}")
     print(f"Profile dir: {browser_profile_dir}")
     print(f"CDP port: {port}")
     print("Log in manually, then run:")
-    print(f"  scripts/crawl_maintenance_orders.sh")
+    print("  scripts/crawl_maintenance_orders.sh")
     return 0
 
 

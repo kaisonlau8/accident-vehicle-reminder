@@ -3,15 +3,25 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="$ROOT/.venv/bin/python"
-STATE="$ROOT/.runtime/browser-state.json"
+
+# shellcheck disable=SC1091
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ROOT/.env"
+  set +a
+fi
+
+SESSION_HOME="${DFMC_DMS_SESSION_HOME:-$ROOT}"
+STATE="$SESSION_HOME/.runtime/browser-state.json"
+PROFILE_DIR="$SESSION_HOME/.browser-profile"
 
 # 清理旧残留进程
 if [[ -f "$STATE" ]]; then
-  OLD_PORT="$(python3 -c "import json; print(json.load(open('$STATE')).get('port',''))" 2>/dev/null || true)"
   OLD_PID="$(python3 -c "import json; print(json.load(open('$STATE')).get('pid',''))" 2>/dev/null || true)"
   if [[ -n "$OLD_PID" ]] && ! ps -p "$OLD_PID" >/dev/null 2>&1; then
     echo "旧浏览器已退出，清理残留..."
-    pkill -f "user-data-dir=$ROOT/.browser-profile" 2>/dev/null || true
+    pkill -f "user-data-dir=$PROFILE_DIR" 2>/dev/null || true
     sleep 2
     rm -f "$STATE"
   fi
@@ -26,7 +36,8 @@ echo "========================================"
 echo "  事故车提醒系统 — DMS 登录"
 echo "========================================"
 echo ""
-echo "Chrome 将打开 DMS 系统，请手动登录。"
+echo "将使用独立 Chromium 打开 DMS（与 VIP 提醒共享会话），不占用本机 Chrome。"
+echo "Session: $SESSION_HOME"
 echo "登录完成后关闭提示，回到终端输入: ./run.sh"
 echo ""
 

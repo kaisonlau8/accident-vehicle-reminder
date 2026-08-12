@@ -78,7 +78,7 @@
     <select id="browser-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
       {% for b in available_browsers %}
       {% if b.available %}
-      <option value="{{ b.name }}">{{ b.label }} ✓</option>
+      <option value="{{ b.name }}" {% if b.default %}selected{% endif %}>{{ b.label }} ✓</option>
       {% else %}
       <option value="{{ b.name }}" disabled>{{ b.label }} ✗（未安装）</option>
       {% endif %}

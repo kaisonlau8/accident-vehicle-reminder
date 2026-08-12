@@ -3,14 +3,14 @@
 
 Session sharing
 ---------------
-Multiple crawlers (e.g. complaints + maintenance orders) can reuse ONE Chrome
-window and ONE keepalive process by pointing at the same session home:
+Multiple crawlers (e.g. VIP reminder + maintenance orders) can reuse ONE
+Chromium window and ONE keepalive process by pointing at the same session home:
 
   export DFMC_DMS_SESSION_HOME=/path/to/shared-dms-session
 
 Layout under the session home (defaults to the plugin root when unset):
 
-  .browser-profile/          Chrome --user-data-dir
+  .browser-profile/          Chromium --user-data-dir
   .runtime/
     browser-state.json       CDP port / pid
     keepalive-state.json     keepalive status
@@ -34,25 +34,113 @@ from playwright.sync_api import Browser, Error, Playwright
 
 
 DEFAULT_TARGET_URL = "https://m-dms.dfmc.com.cn"
-DEFAULT_BROWSER_CANDIDATES = {
-    "chrome": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-    "edge": "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-}
 DEFAULT_STATE_FILE_NAME = "browser-state.json"
 EXPORT_LOCK_NAME = "exporting.lock"
 SESSION_HOME_ENV = "DFMC_DMS_SESSION_HOME"
+BROWSER_EXECUTABLE_ENV = "DFMC_DMS_BROWSER_EXECUTABLE"
+
+BROWSER_PROCESS_MARKERS = (
+    "Google Chrome for Testing",
+    "Chromium",
+    "Google Chrome",
+    "Microsoft Edge",
+)
+
+BROWSER_LABELS = {
+    "chromium": "Chromium (Playwright)",
+    "chrome": "Google Chrome",
+    "edge": "Microsoft Edge",
+}
+
+
+def resolve_playwright_chromium() -> Optional[str]:
+    """Locate Playwright's bundled Chromium / Chrome for Testing."""
+    try:
+        from playwright.sync_api import sync_playwright
+
+        with sync_playwright() as playwright:
+            path = playwright.chromium.executable_path
+        if path and Path(path).exists():
+            return path
+    except Exception:
+        pass
+
+    roots = [
+        Path.home() / "Library/Caches/ms-playwright",
+        Path.home() / ".cache/ms-playwright",
+    ]
+    patterns = [
+        "chromium-*/chrome-mac*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "chromium-*/chrome-mac*/Chromium.app/Contents/MacOS/Chromium",
+        "chromium-*/chrome-linux/chrome",
+        "chromium-*/chrome-win/chrome.exe",
+    ]
+    matches: list[Path] = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for pattern in patterns:
+            matches.extend(root.glob(pattern))
+    if not matches:
+        return None
+    matches.sort(key=lambda item: item.stat().st_mtime, reverse=True)
+    return str(matches[0])
+
+
+def build_browser_candidates() -> dict[str, str]:
+    """Prefer Playwright Chromium so DMS login does not occupy system Chrome."""
+    candidates: dict[str, str] = {}
+    chromium = resolve_playwright_chromium()
+    if chromium:
+        candidates["chromium"] = chromium
+    candidates["chrome"] = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    candidates["edge"] = "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+    return candidates
+
+
+DEFAULT_BROWSER_CANDIDATES = build_browser_candidates()
+DEFAULT_BROWSER_NAME = "chromium" if "chromium" in DEFAULT_BROWSER_CANDIDATES else "chrome"
+
+
+def browser_label(name: str) -> str:
+    return BROWSER_LABELS.get(name, name)
+
+
+def is_cdp_browser_command(cmd: str) -> bool:
+    if "Helper" in cmd:
+        return False
+    return any(marker in cmd for marker in BROWSER_PROCESS_MARKERS)
+
+
+def resolve_executable_from_command(cmd: str) -> str:
+    candidates = build_browser_candidates()
+    for path in candidates.values():
+        if path and path in cmd:
+            return path
+    if "Google Chrome for Testing" in cmd or "/Chromium" in cmd or "Chromium.app" in cmd:
+        return candidates.get("chromium", "")
+    if "Google Chrome" in cmd:
+        return candidates.get("chrome", "")
+    if "Microsoft Edge" in cmd:
+        return candidates.get("edge", "")
+    return cmd.split(None, 1)[0] if cmd else ""
 
 
 def detect_browser(preferred: str, explicit_path: Optional[str]) -> Path:
+    candidates_map = build_browser_candidates()
+    preferred = (preferred or DEFAULT_BROWSER_NAME).strip().lower()
+    if preferred == "custom":
+        preferred = DEFAULT_BROWSER_NAME
+
     candidates: list[tuple[str, Optional[str]]] = []
     if explicit_path:
         candidates.append(("explicit", explicit_path))
-    env_browser = os.environ.get("DFMC_DMS_BROWSER_EXECUTABLE")
+    env_browser = os.environ.get(BROWSER_EXECUTABLE_ENV)
     if env_browser:
         candidates.append(("env", env_browser))
-    if preferred in DEFAULT_BROWSER_CANDIDATES:
-        candidates.append((preferred, DEFAULT_BROWSER_CANDIDATES[preferred]))
-    for name, path in DEFAULT_BROWSER_CANDIDATES.items():
+    if preferred in candidates_map:
+        candidates.append((preferred, candidates_map[preferred]))
+    for name, path in candidates_map.items():
         if name != preferred:
             candidates.append((name, path))
 
@@ -60,7 +148,7 @@ def detect_browser(preferred: str, explicit_path: Optional[str]) -> Path:
         if path and Path(path).exists():
             return Path(path)
 
-    options = "\n".join(f"- {path}" for path in DEFAULT_BROWSER_CANDIDATES.values())
+    options = "\n".join(f"- {path}" for path in candidates_map.values())
     raise FileNotFoundError(
         "No supported browser executable was found.\n"
         "Pass --browser-executable or set DFMC_DMS_BROWSER_EXECUTABLE.\n"
@@ -285,11 +373,7 @@ def recover_browser_state(state_file: Path, plugin_root: Path) -> Optional[int]:
         if not cdp_is_ready(port):
             continue
 
-        executable = ""
-        for _name, path in DEFAULT_BROWSER_CANDIDATES.items():
-            if path in cmd:
-                executable = path
-                break
+        executable = resolve_executable_from_command(cmd)
 
         payload = {
             "port": port,

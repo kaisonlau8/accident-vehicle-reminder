@@ -3,12 +3,22 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="$ROOT/.venv/bin/python"
-STATE="$ROOT/.runtime/browser-state.json"
 
 if [[ ! -x "$PYTHON" ]]; then
   echo "虚拟环境不存在，先运行: python3 $ROOT/scripts/bootstrap.py" >&2
   exit 1
 fi
+
+# shellcheck disable=SC1091
+if [[ -f "$ROOT/.env" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "$ROOT/.env"
+  set +a
+fi
+
+SESSION_HOME="${DFMC_DMS_SESSION_HOME:-$ROOT}"
+STATE="$SESSION_HOME/.runtime/browser-state.json"
 
 # 解析参数
 MODE="test"
