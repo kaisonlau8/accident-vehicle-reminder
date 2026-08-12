@@ -24,15 +24,25 @@ $DFMC_DMS_SESSION_HOME/
     crawl_registry.json      # 爬取登记
 ```
 
+## 爬取时刻表（与本项目相关）
+
+共享文件：`$DFMC_DMS_SESSION_HOME/.runtime/crawl_schedule.json`
+
+| id | 计划时间 | 本仓任务 | owner |
+|----|----------|----------|--------|
+| `accident-morning` | **10:00** | 上午爬取 + 告警 | `crawl_maintenance_orders` |
+| `accident-evening` | **17:00** | 下午爬取 + 报表 | `crawl_maintenance_orders` |
+
+同文件内还有：区域报表 `08:30`、VIP `09:00`（错峰，勿并行）。
+
+保护规则（三仓共用）：
+
+- **提前 3 分钟**（`pre_minutes`）进入禁刷，直到爬取 `unregister` 完成
+- 若到点未开跑，最多再等 **45 分钟**（`await_start_minutes`）后恢复强刷
+- 拿锁 / 放锁时自动写 `crawl_registry.json`
+
 ## 约定
 
-| 爬虫 | 默认时间 | 页面 |
-|------|----------|------|
-| 区域报表 | 08:30 | 多报表导出 |
-| VIP 保养提醒 | 09:00 | 保养提醒任务 |
-| 本项目（上午） | 10:00 | 维修工单查询 |
-| 本项目（下午） | 17:00 | 维修工单查询 |
-
-- 强刷前 3 分钟起禁刷，直至爬取登记完成（见共享时刻表）
 - 同一时刻只允许一个导出（`exporting.lock`）
 - 登录一次即可：本控制台或 VIP 控制台「启动登录」后，其余附着同一会话
+- 改 10:00 / 17:00 调度时，同步改 `crawl_schedule.json` 里对应条目的 `time`

@@ -148,10 +148,10 @@ Web 控制台启动后会监控浏览器会话。只要 DMS 页面在线，控�
 强刷保护（与 VIP / 区域报表共用）：
 
 - `exporting.lock`：导出互斥，持锁期间不刷新
-- `crawl_schedule.json`：定时任务开跑前 3 分钟起禁刷
+- `crawl_schedule.json`：时刻表（本项目 `10:00` / `17:00`，开跑前 3 分钟起禁刷）
 - `crawl_registry.json`：爬取登记期间禁刷，结束后恢复
 
-详见 [docs/shared-browser-session.md](docs/shared-browser-session.md) 与 [m-hero 共享浏览器说明](https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md)。
+时刻表字段与改法见 [docs/shared-browser-session.md](docs/shared-browser-session.md) 与 [m-hero 共享浏览器说明](https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md)。
 
 ### 与 VIP / 区域报表共享浏览器
 
