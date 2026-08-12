@@ -15,6 +15,8 @@ Layout under the session home (defaults to the plugin root when unset):
     browser-state.json       CDP port / pid
     keepalive-state.json     keepalive status
     exporting.lock           busy lock (keepalive skips refresh; crawlers mutex)
+    crawl_schedule.json      时刻表（定时爬取窗口）
+    crawl_registry.json      爬取登记（进行中 / 今日已完成）
 """
 
 from __future__ import annotations
@@ -26,9 +28,10 @@ import socket
 import subprocess
 import time
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
+from zoneinfo import ZoneInfo
 
 from playwright.sync_api import Browser, Error, Playwright
 
@@ -36,8 +39,48 @@ from playwright.sync_api import Browser, Error, Playwright
 DEFAULT_TARGET_URL = "https://m-dms.dfmc.com.cn"
 DEFAULT_STATE_FILE_NAME = "browser-state.json"
 EXPORT_LOCK_NAME = "exporting.lock"
+CRAWL_SCHEDULE_NAME = "crawl_schedule.json"
+CRAWL_REGISTRY_NAME = "crawl_registry.json"
 SESSION_HOME_ENV = "DFMC_DMS_SESSION_HOME"
 BROWSER_EXECUTABLE_ENV = "DFMC_DMS_BROWSER_EXECUTABLE"
+BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+
+# Shared timetable: keepalive skips refresh from (time - pre_minutes) until
+# the matching crawl unregisters (or await_start_minutes elapses with no start).
+DEFAULT_CRAWL_SCHEDULE: dict[str, Any] = {
+    "pre_minutes": 3,
+    "await_start_minutes": 45,
+    "entries": [
+        {
+            "id": "district-form",
+            "name": "区域报表",
+            "time": "08:30",
+            "owners": ["mhero_district_form"],
+            "enabled": True,
+        },
+        {
+            "id": "vip-alert",
+            "name": "VIP保养提醒",
+            "time": "09:00",
+            "owners": ["vip_maintenance_reminder"],
+            "enabled": True,
+        },
+        {
+            "id": "accident-morning",
+            "name": "事故车上午任务",
+            "time": "10:00",
+            "owners": ["crawl_maintenance_orders"],
+            "enabled": True,
+        },
+        {
+            "id": "accident-evening",
+            "name": "事故车下午报表",
+            "time": "17:00",
+            "owners": ["crawl_maintenance_orders"],
+            "enabled": True,
+        },
+    ],
+}
 
 BROWSER_PROCESS_MARKERS = (
     "Google Chrome for Testing",
@@ -200,6 +243,229 @@ def get_export_lock_path(plugin_root: Path) -> Path:
     return get_runtime_dir(plugin_root) / EXPORT_LOCK_NAME
 
 
+def get_crawl_schedule_path(plugin_root: Path) -> Path:
+    return get_runtime_dir(plugin_root) / CRAWL_SCHEDULE_NAME
+
+
+def get_crawl_registry_path(plugin_root: Path) -> Path:
+    return get_runtime_dir(plugin_root) / CRAWL_REGISTRY_NAME
+
+
+def _beijing_now() -> datetime:
+    return datetime.now(BEIJING_TZ)
+
+
+def _parse_hhmm(value: str) -> tuple[int, int]:
+    parts = (value or "").strip().split(":")
+    if len(parts) != 2:
+        raise ValueError(f"invalid HH:MM: {value!r}")
+    return int(parts[0]), int(parts[1])
+
+
+def ensure_default_crawl_schedule(plugin_root: Path) -> Path:
+    """Create crawl_schedule.json with defaults if missing."""
+    path = get_crawl_schedule_path(plugin_root)
+    if not path.exists():
+        path.write_text(
+            json.dumps(DEFAULT_CRAWL_SCHEDULE, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    return path
+
+
+def load_crawl_schedule(plugin_root: Path) -> dict[str, Any]:
+    path = ensure_default_crawl_schedule(plugin_root)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            # Fill missing keys from defaults without wiping custom entries.
+            merged = dict(DEFAULT_CRAWL_SCHEDULE)
+            merged.update({k: v for k, v in data.items() if k != "entries"})
+            if isinstance(data.get("entries"), list) and data["entries"]:
+                merged["entries"] = data["entries"]
+            return merged
+    except (OSError, json.JSONDecodeError, TypeError):
+        pass
+    return dict(DEFAULT_CRAWL_SCHEDULE)
+
+
+def _empty_registry() -> dict[str, Any]:
+    return {"active": None, "completedToday": {"date": "", "ids": []}}
+
+
+def load_crawl_registry(plugin_root: Path) -> dict[str, Any]:
+    path = get_crawl_registry_path(plugin_root)
+    if not path.exists():
+        return _empty_registry()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return _empty_registry()
+        active = data.get("active")
+        if active is not None and not isinstance(active, dict):
+            active = None
+        completed = data.get("completedToday") or {}
+        if not isinstance(completed, dict):
+            completed = {"date": "", "ids": []}
+        ids = completed.get("ids") or []
+        if not isinstance(ids, list):
+            ids = []
+        return {
+            "active": active,
+            "completedToday": {
+                "date": str(completed.get("date") or ""),
+                "ids": [str(x) for x in ids],
+            },
+        }
+    except (OSError, json.JSONDecodeError, TypeError):
+        return _empty_registry()
+
+
+def save_crawl_registry(plugin_root: Path, registry: dict[str, Any]) -> None:
+    path = get_crawl_registry_path(plugin_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(registry, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _normalize_completed(registry: dict[str, Any], today: str) -> list[str]:
+    completed = registry.get("completedToday") or {}
+    if str(completed.get("date") or "") != today:
+        registry["completedToday"] = {"date": today, "ids": []}
+        return []
+    ids = completed.get("ids") or []
+    return [str(x) for x in ids] if isinstance(ids, list) else []
+
+
+def _infer_schedule_id(plugin_root: Path, owner: str, *, now: Optional[datetime] = None) -> str:
+    """Pick the best timetable entry for this owner around now."""
+    now = now or _beijing_now()
+    today = now.strftime("%Y-%m-%d")
+    schedule = load_crawl_schedule(plugin_root)
+    registry = load_crawl_registry(plugin_root)
+    done = set(_normalize_completed(registry, today))
+    pre = int(schedule.get("pre_minutes") or 3)
+    await_start = int(schedule.get("await_start_minutes") or 45)
+    best_id = ""
+    best_delta: Optional[timedelta] = None
+    for entry in schedule.get("entries") or []:
+        if not entry or not entry.get("enabled", True):
+            continue
+        entry_id = str(entry.get("id") or "")
+        if not entry_id or entry_id in done:
+            continue
+        owners = [str(x) for x in (entry.get("owners") or [])]
+        if owner and owners and owner not in owners:
+            continue
+        try:
+            hour, minute = _parse_hhmm(str(entry.get("time") or ""))
+        except ValueError:
+            continue
+        start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        window_start = start - timedelta(minutes=pre)
+        window_end = start + timedelta(minutes=await_start)
+        if not (window_start <= now <= window_end):
+            continue
+        delta = abs(now - start)
+        if best_delta is None or delta < best_delta:
+            best_delta = delta
+            best_id = entry_id
+    return best_id
+
+
+def register_crawl(
+    plugin_root: Path,
+    owner: str,
+    *,
+    schedule_id: str = "",
+) -> dict[str, Any]:
+    """Mark a crawl as in-progress so keepalive skips refresh until unregister."""
+    now = _beijing_now()
+    today = now.strftime("%Y-%m-%d")
+    registry = load_crawl_registry(plugin_root)
+    _normalize_completed(registry, today)
+    sid = (schedule_id or "").strip() or _infer_schedule_id(plugin_root, owner, now=now)
+    active = {
+        "owner": owner,
+        "pid": os.getpid(),
+        "scheduleId": sid,
+        "startedAt": now.isoformat(),
+    }
+    registry["active"] = active
+    save_crawl_registry(plugin_root, registry)
+    return active
+
+
+def unregister_crawl(plugin_root: Path, owner: str = "") -> None:
+    """Clear active crawl registration and mark timetable entry done for today."""
+    now = _beijing_now()
+    today = now.strftime("%Y-%m-%d")
+    registry = load_crawl_registry(plugin_root)
+    done = _normalize_completed(registry, today)
+    active = registry.get("active")
+    if isinstance(active, dict):
+        active_owner = str(active.get("owner") or "")
+        active_pid = int(active.get("pid") or 0)
+        if owner and active_owner and active_owner != owner and active_pid and process_is_running(active_pid):
+            return
+        sid = str(active.get("scheduleId") or "")
+        if sid and sid not in done:
+            done.append(sid)
+        registry["completedToday"] = {"date": today, "ids": done}
+    registry["active"] = None
+    save_crawl_registry(plugin_root, registry)
+
+
+def refresh_block_reason(plugin_root: Path) -> Optional[str]:
+    """Return a human reason if keepalive must skip page.reload; else None."""
+    # 1) Legacy / concurrent export lock
+    lock_file = get_export_lock_path(plugin_root)
+    if lock_file.exists():
+        payload = _read_lock_payload(lock_file)
+        if _lock_is_active(payload):
+            holder = payload.get("owner") or "unknown"
+            return f"export_lock:{holder}"
+
+    now = _beijing_now()
+    today = now.strftime("%Y-%m-%d")
+    registry = load_crawl_registry(plugin_root)
+
+    # 2) Active crawl registration
+    active = registry.get("active")
+    if isinstance(active, dict) and active:
+        pid = int(active.get("pid") or 0)
+        if pid <= 0 or process_is_running(pid):
+            owner = active.get("owner") or "unknown"
+            sid = active.get("scheduleId") or ""
+            return f"registered:{owner}" + (f"/{sid}" if sid else "")
+        # Stale registration — clear
+        registry["active"] = None
+        save_crawl_registry(plugin_root, registry)
+
+    # 3) Timetable pre-window / await-start window
+    schedule = load_crawl_schedule(plugin_root)
+    done = set(_normalize_completed(registry, today))
+    pre = int(schedule.get("pre_minutes") or 3)
+    await_start = int(schedule.get("await_start_minutes") or 45)
+    for entry in schedule.get("entries") or []:
+        if not entry or not entry.get("enabled", True):
+            continue
+        entry_id = str(entry.get("id") or "")
+        if not entry_id or entry_id in done:
+            continue
+        try:
+            hour, minute = _parse_hhmm(str(entry.get("time") or ""))
+        except ValueError:
+            continue
+        start = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        window_start = start - timedelta(minutes=pre)
+        window_end = start + timedelta(minutes=await_start)
+        if window_start <= now <= window_end:
+            name = entry.get("name") or entry_id
+            return f"schedule:{entry_id}({name} {entry.get('time')}, pre={pre}m)"
+
+    return None
+
+
 def write_browser_state(state_file: Path, payload: dict[str, Any]) -> None:
     state_file.parent.mkdir(parents=True, exist_ok=True)
     state_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
@@ -280,12 +546,14 @@ def acquire_export_lock(
     *,
     timeout_seconds: float = 0,
     poll_interval: float = 2.0,
+    schedule_id: str = "",
 ) -> Path:
     """Acquire the shared session busy lock.
 
     Purpose:
     - Tell keepalive to skip page refresh while a crawler is exporting.
     - Prevent two crawlers from driving the same DMS tab at once.
+    - Register the crawl on the shared timetable registry.
 
     timeout_seconds=0: fail immediately if another live owner holds the lock.
     timeout_seconds>0: wait up to that many seconds for the lock.
@@ -322,20 +590,39 @@ def acquire_export_lock(
             + "\n",
             encoding="utf-8",
         )
+        try:
+            active = register_crawl(plugin_root, owner, schedule_id=schedule_id)
+            sid = active.get("scheduleId") or ""
+            print(f"  Crawl registered: owner={owner}" + (f" schedule={sid}" if sid else ""))
+        except Exception as exc:
+            print(f"  [WARN] crawl register failed: {exc}")
         return lock_file
 
 
-def release_export_lock(lock_file: Path, *, owner: str = "") -> None:
+def release_export_lock(lock_file: Path, *, owner: str = "", plugin_root: Optional[Path] = None) -> None:
     """Release the session busy lock if we still own it (or owner check skipped)."""
-    if not lock_file.exists():
-        return
-    if owner:
-        payload = _read_lock_payload(lock_file)
-        current_owner = str(payload.get("owner") or "")
-        current_pid = int(payload.get("pid") or 0)
-        if current_owner and current_owner != owner and current_pid and process_is_running(current_pid):
-            return
-    lock_file.unlink(missing_ok=True)
+    root = plugin_root
+    if root is None and lock_file is not None:
+        # exporting.lock lives in <session>/.runtime/
+        try:
+            root = lock_file.resolve().parent.parent
+        except Exception:
+            root = None
+
+    if lock_file.exists():
+        if owner:
+            payload = _read_lock_payload(lock_file)
+            current_owner = str(payload.get("owner") or "")
+            current_pid = int(payload.get("pid") or 0)
+            if current_owner and current_owner != owner and current_pid and process_is_running(current_pid):
+                return
+        lock_file.unlink(missing_ok=True)
+
+    if root is not None:
+        try:
+            unregister_crawl(root, owner=owner)
+        except Exception as exc:
+            print(f"  [WARN] crawl unregister failed: {exc}")
 
 
 def recover_browser_state(state_file: Path, plugin_root: Path) -> Optional[int]:

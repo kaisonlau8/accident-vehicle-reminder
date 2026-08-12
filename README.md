@@ -2,6 +2,15 @@
 
 猛士科技服务运营的事故维修进度监控系统。系统从 DMS 爬取近 30 天事故维修工单，按维修状态识别在修车辆，生成门店、区域、全国报表，并通过飞书发送告警和报表。
 
+> 工具集总览 / 文档地图 / 依赖关系：[m-hero](https://github.com/kaisonlau8/m-hero)
+
+| 项 | 值 |
+|----|-----|
+| 本地控制台 | `http://127.0.0.1:9000` |
+| 公网 | http://127.0.0.1:9000 |
+| 黄页 | http://127.0.0.1:9004 |
+| 共享会话 | 与 VIP、区域报表共用 `DFMC_DMS_SESSION_HOME`（见 [docs/shared-browser-session.md](docs/shared-browser-session.md)） |
+
 ## 当前口径
 
 - 所有定时触发和爬虫日期范围均按北京时间 UTC+8 计算。
@@ -135,17 +144,23 @@ http://127.0.0.1:9000
 
 Web 控制台启动后会监控浏览器会话。只要 DMS 页面在线，控制台会自动启动 `keepalive_browser.py`，每 300 秒刷新一次 DMS 页面，防止会话过期。
 
-仪表盘会显示 DMS 保活状态和“距离下一次刷新还有 xx 秒”。导出期间会写入 `.runtime/exporting.lock`，保活进程检测到锁文件后会跳过刷新，避免打断下载。
+仪表盘会显示 DMS 保活状态和“距离下一次刷新还有 xx 秒”。
 
-### 与投诉爬虫共享浏览器
+强刷保护（与 VIP / 区域报表共用）：
 
-可与 `dfmc-dms-crawler` 共用同一 Chrome 窗口与保活（错峰爬不同页面）：
+- `exporting.lock`：导出互斥，持锁期间不刷新
+- `crawl_schedule.json`：定时任务开跑前 3 分钟起禁刷
+- `crawl_registry.json`：爬取登记期间禁刷，结束后恢复
+
+详见 [docs/shared-browser-session.md](docs/shared-browser-session.md) 与 [m-hero 共享浏览器说明](https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md)。
+
+### 与 VIP / 区域报表共享浏览器
 
 ```bash
 export DFMC_DMS_SESSION_HOME="$HOME/dms-shared-session"
 ```
 
-详见 [docs/shared-browser-session.md](docs/shared-browser-session.md)。
+本机约定：`/Users/i/dms-shared-session`。定时错峰：区域 08:30 → VIP 09:00 → 本项目 10:00 / 17:00。
 
 DMS 爬取步骤按页面真实交互顺序执行：
 
@@ -188,6 +203,8 @@ DMS 页面
 
 ## 运行文档
 
+- 工具集文档地图：[m-hero](https://github.com/kaisonlau8/m-hero)
 - 日常运维和故障排查：[docs/operations.md](docs/operations.md)
 - `list.xlsx` 格式：[docs/list_xlsx_format.md](docs/list_xlsx_format.md)
 - 飞书消息模板：[docs/飞书消息模板.md](docs/飞书消息模板.md)
+- 共享浏览器：[docs/shared-browser-session.md](docs/shared-browser-session.md)

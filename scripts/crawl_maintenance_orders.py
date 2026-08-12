@@ -467,37 +467,41 @@ def main() -> int:
     filepath: Optional[Path] = None
     status = "unknown"
 
+    lock_file = None
     try:
         with sync_playwright() as pw:
             browser = connect_browser_over_cdp(pw, cdp_port)
             context = browser.contexts[0]
             context.set_default_timeout(10_000)
-
-            page = find_dms_page(context)
-            if page is None:
-                page = context.new_page()
-                page.goto(DEFAULT_TARGET_URL, wait_until="domcontentloaded", timeout=15_000)
-                page.wait_for_timeout(2_000)
-
-            validate_logged_in(page)
-            print("Navigating to maintenance order page...")
-            navigate_to_maintenance_order_page(page)
-            print("Maintenance order page loaded.")
-
-            cdp_session = context.new_cdp_session(page)
             lock_file = acquire_export_lock(plugin_root, CRAWLER_OWNER)
             try:
+                page = find_dms_page(context)
+                if page is None:
+                    page = context.new_page()
+                    page.goto(DEFAULT_TARGET_URL, wait_until="domcontentloaded", timeout=15_000)
+                    page.wait_for_timeout(2_000)
+
+                validate_logged_in(page)
+                print("Navigating to maintenance order page...")
+                navigate_to_maintenance_order_page(page)
+                print("Maintenance order page loaded.")
+
+                cdp_session = context.new_cdp_session(page)
                 filepath, status = run_export_flow(
                     page, cdp_session, output_dir, start_date, end_date, today, args.dry_run
                 )
             finally:
-                release_export_lock(lock_file, owner=CRAWLER_OWNER)
+                release_export_lock(lock_file, owner=CRAWLER_OWNER, plugin_root=plugin_root)
 
     except Exception as exc:
         print(f"Fatal error: {exc}")
         status = "fatal_error"
         try:
-            release_export_lock(get_export_lock_path(plugin_root), owner=CRAWLER_OWNER)
+            release_export_lock(
+                get_export_lock_path(plugin_root),
+                owner=CRAWLER_OWNER,
+                plugin_root=plugin_root,
+            )
         except Exception:
             pass
 

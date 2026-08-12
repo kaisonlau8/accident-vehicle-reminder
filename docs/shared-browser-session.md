@@ -1,38 +1,38 @@
-# 共享浏览器会话：多爬虫复用同一 DMS 窗口
+# 共享浏览器会话
 
-与 `dfmc-dms-crawler` 使用同一套机制。完整说明见：
+本项目与 **VIP 保养提醒**、**区域报表自动化** 共用同一 Playwright Chromium profile 与 CDP 会话。
 
-[`../dfmc-dms-crawler/docs/shared-browser-session.md`](../../dfmc-dms-crawler/docs/shared-browser-session.md)
+权威说明（时刻表 / 登记 / 强刷保护）：
 
-（若目录并列：`plugins/dfmc-dms-crawler/docs/shared-browser-session.md`）
+- 工具集文档：[m-hero/docs/SHARED_DMS_BROWSER.md](https://github.com/kaisonlau8/m-hero/blob/main/docs/SHARED_DMS_BROWSER.md)
 
-## 快速要点
-
-1. 设置同一会话目录，并优先使用 Playwright Chromium（不占用本机 Chrome）：
+## 配置
 
 ```bash
-export DFMC_DMS_SESSION_HOME="$HOME/dms-shared-session"
-export DFMC_DMS_BROWSER_EXECUTABLE="$(python3 - <<'PY'
-from playwright.sync_api import sync_playwright
-with sync_playwright() as p:
-    print(p.chromium.executable_path)
-PY
-)"
+export DFMC_DMS_SESSION_HOME=/Users/i/dms-shared-session
+export DFMC_DMS_BROWSER_EXECUTABLE="…/ms-playwright/chromium-…/Google Chrome for Testing"
 ```
 
-本机当前约定：`DFMC_DMS_SESSION_HOME=/Users/i/dms-shared-session`
-
-2. 用任一控制台登录并保活（事故车默认 `http://127.0.0.1:9000`，VIP 默认 `9002`）：
-
-```bash
-./run.sh --console
+```text
+$DFMC_DMS_SESSION_HOME/
+  .browser-profile/
+  .runtime/
+    browser-state.json
+    keepalive-state.json
+    exporting.lock
+    crawl_schedule.json      # 时刻表
+    crawl_registry.json      # 爬取登记
 ```
 
-3. 错峰跑爬虫；`exporting.lock` 保证同一时刻只有一个爬虫占用标签页。
+## 约定
 
-| 爬虫 | 插件 | 页面 |
-|------|------|------|
-| 维修工单 | accident-vehicle-reminder | 维修工单查询 |
-| 保养提醒 | m-hero-vip-custom-alert | 保养提醒任务 |
+| 爬虫 | 默认时间 | 页面 |
+|------|----------|------|
+| 区域报表 | 08:30 | 多报表导出 |
+| VIP 保养提醒 | 09:00 | 保养提醒任务 |
+| 本项目（上午） | 10:00 | 维修工单查询 |
+| 本项目（下午） | 17:00 | 维修工单查询 |
 
-4. 未设置 `DFMC_DMS_SESSION_HOME` 时，本插件使用自己的 `.browser-profile` / `.runtime`（独立会话）。
+- 强刷前 3 分钟起禁刷，直至爬取登记完成（见共享时刻表）
+- 同一时刻只允许一个导出（`exporting.lock`）
+- 登录一次即可：本控制台或 VIP 控制台「启动登录」后，其余附着同一会话

@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Browser keepalive: periodically refresh the DMS page to prevent session timeout.
 
-Checks for an export lock file before each refresh — skips refresh while
-the crawler is exporting data so the download is not interrupted.
+Skips refresh when:
+- exporting.lock is held,
+- a crawl is registered on crawl_registry.json,
+- or the shared crawl_schedule.json blackout window is active
+  (from schedule_time - pre_minutes until crawl finishes / await timeout).
 """
 
 from __future__ import annotations
@@ -17,12 +20,15 @@ from pathlib import Path
 from playwright.sync_api import Error, sync_playwright
 
 from dfmc_browser_utils import (
-    EXPORT_LOCK_NAME,
     connect_browser_over_cdp,
     ensure_cdp_browser_running,
+    ensure_default_crawl_schedule,
+    get_crawl_schedule_path,
     get_default_state_file,
     get_runtime_dir,
     get_session_home,
+    load_crawl_schedule,
+    refresh_block_reason,
 )
 
 
@@ -42,14 +48,19 @@ def main() -> int:
     plugin_root = Path(__file__).resolve().parent.parent
     state_file = Path(args.state_file).expanduser().resolve() if args.state_file else get_default_state_file(plugin_root)
     runtime_dir = get_runtime_dir(plugin_root)
-    lock_file = runtime_dir / EXPORT_LOCK_NAME
     status_file = Path(args.status_file).expanduser().resolve() if args.status_file else runtime_dir / "keepalive-state.json"
     started_at = int(time.time())
+    schedule_path = ensure_default_crawl_schedule(plugin_root)
+    schedule = load_crawl_schedule(plugin_root)
 
     cdp_port = ensure_cdp_browser_running(state_file, plugin_root=plugin_root)
     print(f"Session home: {get_session_home(plugin_root)}")
     print(f"Browser alive on CDP port {cdp_port}. Interval: {args.interval}s")
-    print(f"Lock file: {lock_file} (refresh will be skipped while lock exists)")
+    print(
+        f"Crawl schedule: {schedule_path} "
+        f"(pre={schedule.get('pre_minutes')}m, await={schedule.get('await_start_minutes')}m, "
+        f"entries={len(schedule.get('entries') or [])})"
+    )
     _write_status(status_file, {
         "pid": os.getpid(),
         "interval": args.interval,
@@ -57,6 +68,7 @@ def main() -> int:
         "lastResult": "starting",
         "lastActionAt": 0,
         "nextRefreshAt": started_at + args.interval,
+        "scheduleFile": str(get_crawl_schedule_path(plugin_root)),
     })
 
     should_stop = False
@@ -81,13 +93,12 @@ def main() -> int:
                     print("Browser disconnected, exiting.")
                     break
 
-                # Check export lock — skip refresh while crawler is downloading
                 last_result = "not_found"
-                if lock_file.exists():
-                    print(f"[{cycle}] Export in progress (lock detected), skipping refresh")
-                    last_result = "skipped_locked"
+                block_reason = refresh_block_reason(plugin_root)
+                if block_reason:
+                    print(f"[{cycle}] Skip refresh ({block_reason})")
+                    last_result = f"skipped:{block_reason}"
                 else:
-                    # Find a DMS page to refresh
                     refreshed = False
                     for page in context.pages:
                         try:
@@ -114,6 +125,7 @@ def main() -> int:
                     "lastActionAt": int(time.time()),
                     "nextRefreshAt": next_refresh_at,
                     "cycle": cycle,
+                    "blockReason": block_reason or "",
                 })
 
                 if args.once:
