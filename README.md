@@ -7,8 +7,7 @@
 | 项 | 值 |
 |----|-----|
 | 本地控制台 | `http://127.0.0.1:9000` |
-| 公网 | http://127.0.0.1:9000 |
-| 黄页 | http://127.0.0.1:9004 |
+| 黄页（本地） | `http://127.0.0.1:9004` |
 | 共享会话 | 与 VIP、区域报表共用 `DFMC_DMS_SESSION_HOME`（见 [docs/shared-browser-session.md](docs/shared-browser-session.md)） |
 
 ## 当前口径
