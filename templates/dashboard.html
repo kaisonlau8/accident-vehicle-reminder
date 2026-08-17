@@ -17,8 +17,8 @@
     <div class="label">定时爬取策略</div>
   </div>
   <div class="stat">
-    <div class="num" id="browser-status" style="color:{% if browser_ok %}var(--turquoise){% else %}var(--red){% endif %};">
-      {% if browser_ok %}在线{% else %}离线{% endif %}
+    <div class="num" id="browser-status" style="color:{% if keepalive_info.need_login %}var(--orange){% elif browser_ok %}var(--turquoise){% else %}var(--red){% endif %};">
+      {% if keepalive_info.need_login %}需重新登录{% elif browser_ok %}在线{% else %}离线{% endif %}
     </div>
     <div class="label">浏览器会话</div>
   </div>
@@ -42,11 +42,13 @@
     <div class="label">任务状态</div>
   </div>
   <div class="stat">
-    <div class="num" id="keepalive-status" style="color:{% if keepalive_info.running %}var(--turquoise){% else %}var(--red){% endif %};">
-      {% if keepalive_info.running %}已开启{% else %}未开启{% endif %}
+    <div class="num" id="keepalive-status" style="color:{% if keepalive_info.need_login %}var(--orange){% elif keepalive_info.running %}var(--turquoise){% else %}var(--red){% endif %};">
+      {% if keepalive_info.need_login %}需重新登录{% elif keepalive_info.running %}已开启{% else %}未开启{% endif %}
     </div>
     <div class="label" id="keepalive-detail">
-      {% if keepalive_info.running and keepalive_info.next_refresh_at_epoch %}
+      {% if keepalive_info.need_login %}
+      请在浏览器中完成 DMS 登录
+      {% elif keepalive_info.running and keepalive_info.next_refresh_at_epoch %}
       下次刷新 {{ keepalive_info.seconds_left }} 秒
       {% elif keepalive_info.running %}
       初始化中
@@ -66,7 +68,7 @@
       <tr><td>PID</td><td>{{ browser.pid }}</td></tr>
       <tr><td>CDP端口</td><td>{{ browser.port }}</td></tr>
       <tr><td>启动时间</td><td>{{ browser.startedAt or '未知' }}</td></tr>
-      <tr><td>状态</td><td><span class="badge {% if browser_ok %}badge-green{% else %}badge-red{% endif %}">{% if browser_ok %}在线{% else %}离线{% endif %}</span></td></tr>
+      <tr><td>状态</td><td><span class="badge {% if keepalive_info.need_login %}badge-orange{% elif browser_ok %}badge-green{% else %}badge-red{% endif %}" id="browser-badge">{% if keepalive_info.need_login %}需重新登录{% elif browser_ok %}在线{% else %}离线{% endif %}</span></td></tr>
     </table>
     {% else %}
     <p style="color:var(--gray);">尚未连接浏览器，请选择浏览器并启动登录。</p>
@@ -90,7 +92,9 @@
     {% endif %}
   </div>
 
-  {% if not browser_ok and browser %}
+  {% if keepalive_info.need_login %}
+  <p style="color:var(--orange); font-size:13px;">DMS 需要重新登录，请在已打开的浏览器中完成登录。保活不会自动填账密。</p>
+  {% elif not browser_ok and browser %}
   <p style="color:var(--orange); font-size:13px;">浏览器在运行但 DMS 页面未打开，点击"启动登录"重新打开 DMS 页面。</p>
   {% elif browser_ok %}
   <p style="color:var(--turquoise); font-size:13px;">浏览器在线，可以执行爬取任务。登录后请在 DMS 中确认会话有效。</p>
@@ -113,11 +117,19 @@
 <script>
 let keepaliveNextRefreshEpoch = {{ keepalive_info.next_refresh_at_epoch or 0 }};
 let keepaliveRunning = {{ 'true' if keepalive_info.running else 'false' }};
+let keepaliveNeedLogin = {{ 'true' if keepalive_info.need_login else 'false' }};
 
 function renderKeepaliveStatus() {
   var statusEl = document.getElementById('keepalive-status');
   var detailEl = document.getElementById('keepalive-detail');
   if (!statusEl || !detailEl) return;
+
+  if (keepaliveNeedLogin) {
+    statusEl.textContent = '需重新登录';
+    statusEl.style.color = 'var(--orange)';
+    detailEl.textContent = '请在浏览器中完成 DMS 登录';
+    return;
+  }
 
   if (!keepaliveRunning) {
     statusEl.textContent = '未开启';
@@ -144,6 +156,22 @@ function refreshDashboardStatus() {
   fetch('/api/status').then(r => r.json()).then(d => {
     keepaliveRunning = !!(d.keepalive_info && d.keepalive_info.running);
     keepaliveNextRefreshEpoch = d.keepalive_info ? (d.keepalive_info.next_refresh_at_epoch || 0) : 0;
+    keepaliveNeedLogin = !!(d.keepalive_info && d.keepalive_info.need_login);
+    var browserStatus = document.getElementById('browser-status');
+    var badge = document.getElementById('browser-badge');
+    if (browserStatus) {
+      if (keepaliveNeedLogin) {
+        browserStatus.textContent = '需重新登录';
+        browserStatus.style.color = 'var(--orange)';
+      } else {
+        browserStatus.textContent = d.browser_ok ? '在线' : '离线';
+        browserStatus.style.color = d.browser_ok ? 'var(--turquoise)' : 'var(--red)';
+      }
+    }
+    if (badge) {
+      badge.textContent = keepaliveNeedLogin ? '需重新登录' : (d.browser_ok ? '在线' : '离线');
+      badge.className = 'badge ' + (keepaliveNeedLogin ? 'badge-orange' : (d.browser_ok ? 'badge-green' : 'badge-red'));
+    }
     renderKeepaliveStatus();
 
     var skipEl = document.getElementById('skip-crawl-status');

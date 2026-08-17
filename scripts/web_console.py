@@ -35,18 +35,26 @@ from message_dispatcher import (
 from dfmc_browser_utils import (
     DEFAULT_BROWSER_CANDIDATES,
     DEFAULT_BROWSER_NAME,
+    DEFAULT_TARGET_URL,
+    SESSION_HOME_ENV,
     browser_label,
+    collect_page_hints,
+    build_shared_chromium_command,
     detect_browser,
+    dms_page_alive,
+    ensure_dms_tab,
     find_free_port,
-    write_browser_state,
-    read_browser_state,
-    process_is_running,
-    get_runtime_dir,
     get_browser_profile_dir,
+    get_keepalive_log_path,
+    get_runtime_dir,
     get_session_home,
     is_cdp_browser_command,
+    launch_shared_cdp_browser,
+    process_is_running,
+    read_browser_state,
     resolve_executable_from_command,
-    SESSION_HOME_ENV,
+    rotate_keepalive_log,
+    write_browser_state,
 )
 from time_utils import beijing_now, beijing_strftime
 
@@ -192,14 +200,8 @@ def _cdp_port_alive(port: int) -> bool:
 
 
 def _dms_page_alive(port: int) -> bool:
-    """检查浏览器中是否还有 DMS 页面打开。"""
-    import urllib.request
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as resp:
-            targets = json.loads(resp.read().decode("utf-8"))
-            return any(t.get("type") == "page" and "m-dms.dfmc.com.cn" in (t.get("url") or "") for t in targets)
-    except Exception:
-        return False
+    """检查浏览器中是否还有 DMS / SSO / 登录页。"""
+    return dms_page_alive(port)
 
 
 def _find_existing_browser() -> dict | None:
@@ -365,6 +367,12 @@ def _coerce_epoch(value) -> int:
     return 0
 
 
+def _session_hint_for_port(port: int) -> str:
+    if not port or not _cdp_port_alive(port):
+        return ""
+    return str(collect_page_hints(port).get("hint") or "")
+
+
 def _get_keepalive_info() -> dict:
     state = _load_keepalive_runtime()
     running = _keepalive_process_running()
@@ -374,6 +382,11 @@ def _get_keepalive_info() -> dict:
     started_at = _coerce_epoch(state.get("startedAt"))
     if running and not next_refresh_at and started_at:
         next_refresh_at = started_at + interval
+    browser = _load_browser_state() or {}
+    port = int(browser.get("port") or 0)
+    last_result = str(state.get("lastResult") or "")
+    session_hint = _session_hint_for_port(port)
+    need_login = last_result == "need_login" or session_hint in {"login", "sso"}
     return {
         "running": running,
         "pid": int(state.get("pid") or 0),
@@ -382,9 +395,23 @@ def _get_keepalive_info() -> dict:
         "last_action_at_epoch": _coerce_epoch(state.get("lastActionAt")),
         "next_refresh_at_epoch": next_refresh_at,
         "seconds_left": max(next_refresh_at - now_ts, 0) if running and next_refresh_at else 0,
-        "last_result": state.get("lastResult", ""),
+        "last_result": last_result,
         "cycle": int(state.get("cycle") or 0),
+        "session_hint": session_hint,
+        "need_login": need_login,
     }
+
+
+def _prepare_shared_browser() -> dict | None:
+    browser = _load_browser_state()
+    port = int((browser or {}).get("port") or 0)
+    if port and _cdp_port_alive(port):
+        ensure_dms_tab(port)
+        return browser
+    try:
+        return launch_shared_cdp_browser(PLUGIN_ROOT)
+    except Exception:
+        return browser or None
 
 
 def _stop_keepalive_process() -> None:
@@ -401,13 +428,13 @@ def _stop_keepalive_process() -> None:
 
 
 def _ensure_keepalive_process() -> bool:
-    browser = _load_browser_state()
+    browser = _prepare_shared_browser()
     if not browser:
         _stop_keepalive_process()
         return False
 
     port = int(browser.get("port") or 0)
-    if not port or not _cdp_port_alive(port) or not _dms_page_alive(port):
+    if not port or not _cdp_port_alive(port):
         _stop_keepalive_process()
         return False
 
@@ -416,23 +443,30 @@ def _ensure_keepalive_process() -> bool:
 
     keepalive_script = PLUGIN_ROOT / "scripts" / "keepalive_browser.py"
     python_bin = PLUGIN_ROOT / ".venv" / "bin" / "python"
+    log_path = get_keepalive_log_path(PLUGIN_ROOT)
     try:
         now_ts = int(time.time())
         interval = 300
-        proc = subprocess.Popen(
-            [
-                str(python_bin),
-                str(keepalive_script),
-                "--state-file",
-                str(RUNTIME_DIR / "browser-state.json"),
-                "--status-file",
-                str(RUNTIME_DIR / "keepalive-state.json"),
-            ],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
+        rotate_keepalive_log(log_path)
+        log_fp = open(log_path, "a", encoding="utf-8")
+        try:
+            proc = subprocess.Popen(
+                [
+                    str(python_bin),
+                    "-u",
+                    str(keepalive_script),
+                    "--state-file",
+                    str(RUNTIME_DIR / "browser-state.json"),
+                    "--status-file",
+                    str(RUNTIME_DIR / "keepalive-state.json"),
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=log_fp,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        finally:
+            log_fp.close()
     except Exception:
         return False
 
@@ -559,9 +593,9 @@ def dashboard():
     browser_ok = False
     if browser:
         port = browser.get("port", 0)
-        browser_ok = _cdp_port_alive(port) and _dms_page_alive(port)
-        if browser_ok:
+        if port and _cdp_port_alive(port):
             _ensure_keepalive_process()
+        browser_ok = _cdp_port_alive(port) and _dms_page_alive(port)
     keepalive_info = _get_keepalive_info()
 
     # 快照统计
@@ -921,9 +955,9 @@ def api_status():
     if browser:
         pid = browser.get("pid", 0)
         port = browser.get("port", 0)
-        browser_ok = _cdp_port_alive(port) and _dms_page_alive(port)
-        if browser_ok:
+        if port and _cdp_port_alive(port):
             _ensure_keepalive_process()
+        browser_ok = _cdp_port_alive(port) and _dms_page_alive(port)
         browser_info = {
             "browser": Path(browser.get("browserExecutable", "")).stem,
             "pid": pid,
@@ -1009,16 +1043,7 @@ def api_browser_launch():
     if existing_state and _cdp_port_alive(existing_state.get("port", 0)):
         port = existing_state.get("port", 0)
         # If DMS page is closed, open a new one via CDP
-        if not _dms_page_alive(port):
-            import urllib.request
-            try:
-                req = urllib.request.Request(
-                    f"http://127.0.0.1:{port}/json/new?https%3A%2F%2Fm-dms.dfmc.com.cn",
-                    method="PUT",
-                )
-                urllib.request.urlopen(req, timeout=3).read()
-            except Exception:
-                pass
+        ensure_dms_tab(port)
         _ensure_keepalive_process()
         return jsonify({
             "launched": True,
@@ -1036,16 +1061,9 @@ def api_browser_launch():
 
     port = find_free_port()
     browser_profile_dir = BROWSER_PROFILE_DIR
-    target_url = "https://m-dms.dfmc.com.cn"
+    target_url = DEFAULT_TARGET_URL
 
-    cmd = [
-        str(browser_executable),
-        f"--remote-debugging-port={port}",
-        f"--user-data-dir={browser_profile_dir}",
-        "--no-first-run",
-        "--disable-default-apps",
-        target_url,
-    ]
+    cmd = build_shared_chromium_command(browser_executable, port, browser_profile_dir)
 
     import subprocess
     try:
@@ -1089,6 +1107,7 @@ def api_browser_launch():
         "targetUrl": target_url,
         "startedAt": beijing_now().strftime("%Y-%m-%dT%H:%M:%S"),
     })
+    ensure_dms_tab(port)
 
     # macOS: 用 AppleScript 激活窗口
     app_name = browser_executable.stem
@@ -1119,17 +1138,50 @@ def api_browser_disconnect():
     return jsonify({"disconnected": True})
 
 
+ACCIDENT_SCHEDULER_FLAG = RUNTIME_DIR / "accident-scheduler-enabled.json"
+
+
+def _set_accident_scheduler_enabled(enabled: bool, skip_crawl: bool = False) -> None:
+    ACCIDENT_SCHEDULER_FLAG.write_text(
+        json.dumps({"enabled": bool(enabled), "skip_crawl": bool(skip_crawl)}, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _accident_scheduler_flag() -> dict:
+    if not ACCIDENT_SCHEDULER_FLAG.exists():
+        return {"enabled": False, "skip_crawl": False}
+    try:
+        data = json.loads(ACCIDENT_SCHEDULER_FLAG.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return {
+                "enabled": bool(data.get("enabled")),
+                "skip_crawl": bool(data.get("skip_crawl")),
+            }
+    except Exception:
+        pass
+    return {"enabled": False, "skip_crawl": False}
+
+
+def _start_accident_scheduler(skip_crawl: bool = False) -> bool:
+    if scheduler_state["mode"] == "scheduled":
+        return False
+    t = threading.Thread(target=_run_scheduler_loop, kwargs={"skip_crawl": skip_crawl}, daemon=True)
+    scheduler_state["mode"] = "scheduled"
+    scheduler_state["skip_crawl"] = skip_crawl
+    scheduler_state["scheduler_thread"] = t
+    t.start()
+    _set_accident_scheduler_enabled(True, skip_crawl=skip_crawl)
+    return True
+
+
 @app.route("/api/start-scheduler", methods=["POST"])
 def api_start_scheduler():
     """启动定时等候模式。"""
     if scheduler_state["mode"] == "scheduled":
         return jsonify({"error": "调度器已在运行", "skip_crawl": bool(scheduler_state.get("skip_crawl", False))})
     skip_crawl = bool(request.json.get("skip_crawl", False)) if request.json else False
-    t = threading.Thread(target=_run_scheduler_loop, kwargs={"skip_crawl": skip_crawl}, daemon=True)
-    scheduler_state["mode"] = "scheduled"
-    scheduler_state["skip_crawl"] = skip_crawl
-    scheduler_state["scheduler_thread"] = t
-    t.start()
+    _start_accident_scheduler(skip_crawl=skip_crawl)
     return jsonify({"started": True, "skip_crawl": skip_crawl})
 
 
@@ -1137,6 +1189,7 @@ def api_start_scheduler():
 def api_stop_scheduler():
     """停止定时等候模式。"""
     _stop_scheduler()
+    _set_accident_scheduler_enabled(False, skip_crawl=False)
     return jsonify({"stopped": True})
 
 
@@ -1350,5 +1403,9 @@ if __name__ == "__main__":
 
     _start_keepalive_watchdog()
     _start_contacts_sync_watchdog()
+    saved = _accident_scheduler_flag()
+    if saved.get("enabled"):
+        _start_accident_scheduler(skip_crawl=bool(saved.get("skip_crawl")))
+        print("Accident scheduler restored (10:00 / 17:00)")
     print(f"事故车提醒系统 Web 控制台启动: http://{args.host}:{args.port}")
     app.run(host=args.host, port=args.port, debug=False)

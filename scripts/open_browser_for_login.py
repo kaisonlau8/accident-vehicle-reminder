@@ -27,6 +27,8 @@ from dfmc_browser_utils import (  # noqa: E402
     DEFAULT_BROWSER_CANDIDATES,
     DEFAULT_BROWSER_NAME,
     DEFAULT_TARGET_URL,
+    build_shared_chromium_command,
+    ensure_dms_tab,
     detect_browser,
     find_free_port,
     get_browser_profile_dir,
@@ -177,7 +179,7 @@ def main() -> int:
             payload = json.loads(state_file.read_text(encoding="utf-8"))
             if state_matches_browser(payload, browser_executable, browser_profile_dir):
                 port = int(payload["port"])
-                ensure_browser_page(port, args.target_url)
+                ensure_dms_tab(port)
                 activate_browser_window(browser_executable)
                 print(f"Login browser already running. State file: {state_file}")
                 print(f"Crawl with: scripts/crawl_maintenance_orders.sh")
@@ -188,16 +190,12 @@ def main() -> int:
 
     browser_profile_dir.mkdir(parents=True, exist_ok=True)
     port = find_free_port()
-    command = [
-        str(browser_executable),
-        f"--remote-debugging-port={port}",
-        f"--user-data-dir={browser_profile_dir}",
-        "--new-window",
-        "--no-first-run",
-        "--disable-popup-blocking",
-        "--window-size=1440,960",
-        args.target_url,
-    ]
+    command = build_shared_chromium_command(
+        browser_executable,
+        port,
+        browser_profile_dir,
+        extra_args=["--new-window", "--disable-popup-blocking", "--window-size=1440,960"],
+    )
     process = subprocess.Popen(
         command,
         stdout=subprocess.DEVNULL,
@@ -221,6 +219,7 @@ def main() -> int:
         "startedAt": now_iso(),
     }
     write_browser_state(state_file, payload)
+    ensure_dms_tab(port)
 
     time.sleep(1)
     activate_browser_window(browser_executable)

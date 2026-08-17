@@ -55,21 +55,24 @@ Web 控制台的“模式切换”页面可以启动“定时等候模式”。�
 
 控制台会自动管理 DMS 保活：
 
-- 浏览器会话在线且 DMS 页面存在时，自动启动保活进程。
-- 保活进程每 300 秒刷新一次 DMS 页面。
-- 导出期间存在 `.runtime/exporting.lock`，保活会跳过刷新，避免影响下载。
-- 断开浏览器连接或 DMS 页面离线时，控制台会停止保活状态。
+- 共享 Chromium 在跑时自动启动保活；标签被关会尝试重开干净 DMS 地址。
+- 保活每 300 秒短连 CDP，导航到去掉 OAuth `?code=` 的地址，然后断开，避免和爬虫抢连接。
+- 导出锁 / 爬取登记 / 时刻表窗口内跳过刷新。
+- 浏览器崩溃后会按共享 profile 找回或重新拉起；SSO 过期需人工登录（仪表盘显示「需重新登录」）。
+- 只有浏览器进程不存在且拉起失败时，才停止保活。
 
-保活状态文件：
+保活状态与日志：
 
 ```text
-.runtime/keepalive-state.json
+$DFMC_DMS_SESSION_HOME/.runtime/keepalive-state.json
+$DFMC_DMS_SESSION_HOME/.runtime/keepalive.log
 ```
 
 常用检查：
 
 ```bash
-cat .runtime/keepalive-state.json
+cat /Users/i/dms-shared-session/.runtime/keepalive-state.json
+tail -n 30 /Users/i/dms-shared-session/.runtime/keepalive.log
 ps -eo pid=,stat=,command= | rg keepalive_browser.py
 ```
 

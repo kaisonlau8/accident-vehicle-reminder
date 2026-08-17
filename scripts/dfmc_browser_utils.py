@@ -31,16 +31,21 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from playwright.sync_api import Browser, Error, Playwright
 
 
 DEFAULT_TARGET_URL = "https://m-dms.dfmc.com.cn"
+DMS_HOST = "m-dms.dfmc.com.cn"
+DMS_CLEAN_URL = "https://m-dms.dfmc.com.cn/#/dashboard"
 DEFAULT_STATE_FILE_NAME = "browser-state.json"
 EXPORT_LOCK_NAME = "exporting.lock"
 CRAWL_SCHEDULE_NAME = "crawl_schedule.json"
 CRAWL_REGISTRY_NAME = "crawl_registry.json"
+KEEPALIVE_LOG_NAME = "keepalive.log"
+KEEPALIVE_LOG_MAX_BYTES = 2 * 1024 * 1024
 SESSION_HOME_ENV = "DFMC_DMS_SESSION_HOME"
 BROWSER_EXECUTABLE_ENV = "DFMC_DMS_BROWSER_EXECUTABLE"
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
@@ -492,16 +497,142 @@ def cdp_is_ready(port: int) -> bool:
 
 
 def dms_page_alive(port: int) -> bool:
-    """Check whether a DMS page tab is open via CDP /json/list."""
+    """True when a DMS / SSO / login tab is already open."""
+    return bool(collect_page_hints(port).get("has_session"))
+
+
+def sanitize_dms_url(url: str = "") -> str:
+    """Drop OAuth query (?code=) and keep a DMS hash route."""
+    raw = (url or "").strip()
+    fragment = "/dashboard"
+    if "#" in raw:
+        piece = raw.split("#", 1)[1].strip()
+        if piece:
+            fragment = piece if piece.startswith("/") else f"/{piece}"
+    return f"{DEFAULT_TARGET_URL}/#/{fragment.lstrip('/')}"
+
+
+def dms_session_hint(url: str = "") -> str:
+    """Classify a tab URL: ok / sso / login / other."""
+    text = (url or "").lower()
+    if not text:
+        return "other"
+    if "iam-admin.m-hero.com" in text or "sso." in text or "/cas/" in text:
+        return "sso"
+    if "/login" in text:
+        return "login"
+    if DMS_HOST in text:
+        return "ok"
+    return "other"
+
+
+def list_cdp_pages(port: int) -> list[dict[str, Any]]:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=2) as resp:
             targets = json.loads(resp.read().decode("utf-8"))
-            return any(
-                t.get("type") == "page" and "m-dms.dfmc.com.cn" in (t.get("url") or "")
-                for t in targets
-            )
+        if isinstance(targets, list):
+            return [t for t in targets if isinstance(t, dict) and t.get("type") == "page"]
+    except Exception:
+        return []
+    return []
+
+
+def collect_page_hints(port: int) -> dict[str, Any]:
+    pages = list_cdp_pages(port)
+    urls = [str(p.get("url") or "") for p in pages]
+    hints = [dms_session_hint(u) for u in urls]
+    dms_url = next((u for u in urls if DMS_HOST in u), "")
+    hint = "other"
+    if "ok" in hints:
+        hint = "ok"
+    elif "sso" in hints:
+        hint = "sso"
+    elif "login" in hints:
+        hint = "login"
+    has_session = hint in {"ok", "sso", "login"}
+    return {
+        "pages": pages,
+        "urls": urls,
+        "hint": hint,
+        "dms_url": dms_url,
+        "has_dms": has_session,
+        "has_session": has_session,
+    }
+
+
+def _is_blank_tab_url(url: str = "") -> bool:
+    text = (url or "").strip().lower()
+    return text in {"", "about:blank"} or text.startswith("chrome://newtab") or text.startswith("chrome://new-tab-page")
+
+
+def close_cdp_page(port: int, target_id: str) -> bool:
+    page_id = (target_id or "").strip()
+    if not page_id:
+        return False
+    try:
+        urllib.request.urlopen(f"http://127.0.0.1:{port}/json/close/{quote(page_id, safe='')}", timeout=3).read()
+        return True
     except Exception:
         return False
+
+
+def open_dms_tab(port: int, url: str = "") -> bool:
+    """Open a clean DMS tab via Chrome HTTP CDP."""
+    target = sanitize_dms_url(url) if url else DMS_CLEAN_URL
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/json/new?{quote(target, safe='')}",
+            method="PUT",
+        )
+        urllib.request.urlopen(req, timeout=3).read()
+        return True
+    except Exception:
+        return False
+
+
+def ensure_dms_tab(port: int) -> bool:
+    """Keep exactly one DMS/SSO/login tab. Do not open another if one exists."""
+    hints = collect_page_hints(port)
+    pages = [p for p in (hints.get("pages") or []) if isinstance(p, dict)]
+    session_pages = []
+    blank_pages = []
+    for page in pages:
+        url = str(page.get("url") or "")
+        hint = dms_session_hint(url)
+        if hint in {"ok", "sso", "login"}:
+            session_pages.append(page)
+        elif _is_blank_tab_url(url):
+            blank_pages.append(page)
+    if session_pages:
+        for page in session_pages[1:]:
+            close_cdp_page(port, str(page.get("id") or ""))
+        for page in blank_pages:
+            close_cdp_page(port, str(page.get("id") or ""))
+        return True
+    return open_dms_tab(port)
+
+
+def wait_for_dms_session(port: int, timeout_seconds: float = 45.0) -> dict[str, Any]:
+    """Wait briefly for SSO to land on DMS, or return login/sso hint."""
+    deadline = time.monotonic() + max(timeout_seconds, 0)
+    last = collect_page_hints(port)
+    while time.monotonic() < deadline:
+        last = collect_page_hints(port)
+        if last.get("hint") in {"ok", "login", "sso"}:
+            return last
+        time.sleep(1)
+    return last
+
+
+def get_keepalive_log_path(plugin_root: Path) -> Path:
+    return get_runtime_dir(plugin_root) / KEEPALIVE_LOG_NAME
+
+
+def rotate_keepalive_log(log_path: Path, max_bytes: int = KEEPALIVE_LOG_MAX_BYTES) -> None:
+    if log_path.exists() and log_path.stat().st_size >= max_bytes:
+        backup = log_path.with_suffix(".log.1")
+        backup.unlink(missing_ok=True)
+        log_path.replace(backup)
 
 
 def connect_browser_over_cdp(playwright: Playwright, port: int, timeout_seconds: float = 15.0) -> Browser:
@@ -512,7 +643,10 @@ def connect_browser_over_cdp(playwright: Playwright, port: int, timeout_seconds:
             return playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{port}")
         except Exception as exc:
             last_error = exc
-            time.sleep(0.25)
+            if "Browser context management is not supported" in str(exc):
+                time.sleep(1.5)
+            else:
+                time.sleep(0.25)
     raise RuntimeError(f"Failed to connect to Chrome over CDP on port {port}: {last_error}")
 
 
@@ -717,6 +851,79 @@ def ensure_cdp_browser_running(state_file: Path, plugin_root: Optional[Path] = N
         raise RuntimeError(f"CDP port {port} is not responding. Browser may be hung.")
 
     return port
+
+
+def chromium_automation_args() -> list[str]:
+    """Flags that stop macOS from asking for the login password on every launch.
+
+    Playwright Chromium otherwise unlocks "Chrome Safe Storage" via Keychain.
+    The shared profile also inherited desktop extensions (1Password, etc.).
+    """
+    return [
+        "--no-first-run",
+        "--disable-default-apps",
+        "--disable-extensions",
+        "--use-mock-keychain",
+        "--password-store=basic",
+    ]
+
+
+def build_shared_chromium_command(
+    executable: str | Path,
+    port: int,
+    profile: Path,
+    target_url: str = "",
+    extra_args: list[str] | None = None,
+) -> list[str]:
+    command = [
+        str(executable),
+        f"--remote-debugging-port={int(port)}",
+        f"--user-data-dir={profile}",
+        *chromium_automation_args(),
+        *(extra_args or []),
+    ]
+    if target_url:
+        command.append(target_url)
+    return command
+
+
+def launch_shared_cdp_browser(plugin_root: Path, browser_name: str = "") -> dict[str, Any]:
+    """Recover a running shared Chromium, or launch one with the shared profile."""
+    state_file = get_default_state_file(plugin_root)
+    port = recover_browser_state(state_file, plugin_root)
+    if port:
+        return read_browser_state(state_file)
+
+    executable = detect_browser(browser_name or DEFAULT_BROWSER_NAME, None)
+    port = find_free_port()
+    profile = get_browser_profile_dir(plugin_root)
+    proc = subprocess.Popen(
+        build_shared_chromium_command(executable, port, profile),
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    time.sleep(3)
+    if cdp_is_ready(port):
+        ensure_dms_tab(port)
+    if not process_is_running(proc.pid):
+        recovered = recover_browser_state(state_file, plugin_root)
+        if recovered:
+            return read_browser_state(state_file)
+        raise RuntimeError("Browser exited immediately after launch (profile may be in use).")
+
+    payload = {
+        "port": port,
+        "pid": proc.pid,
+        "browserExecutable": str(executable),
+        "browserProfileDir": str(profile),
+        "targetUrl": DMS_CLEAN_URL,
+        "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "sessionHome": str(get_session_home(plugin_root)),
+    }
+    write_browser_state(state_file, payload)
+    return payload
 
 
 def find_dms_page(context: Any) -> Optional[Any]:

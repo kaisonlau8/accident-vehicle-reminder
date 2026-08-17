@@ -19,6 +19,7 @@ $DFMC_DMS_SESSION_HOME/
   .runtime/
     browser-state.json
     keepalive-state.json
+    keepalive.log
     exporting.lock
     crawl_schedule.json      # 时刻表
     crawl_registry.json      # 爬取登记
@@ -45,4 +46,5 @@ $DFMC_DMS_SESSION_HOME/
 
 - 同一时刻只允许一个导出（`exporting.lock`）
 - 登录一次即可：本控制台或 VIP 控制台「启动登录」后，其余附着同一会话
+- 冷启动带 `--disable-extensions` 与 `--use-mock-keychain`，避免每次输 macOS 密码；换参数后可能要重登一次 DMS
 - 改 10:00 / 17:00 调度时，同步改 `crawl_schedule.json` 里对应条目的 `time`
