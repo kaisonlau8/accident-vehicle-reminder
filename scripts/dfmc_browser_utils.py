@@ -512,6 +512,58 @@ def sanitize_dms_url(url: str = "") -> str:
     return f"{DEFAULT_TARGET_URL}/#/{fragment.lstrip('/')}"
 
 
+def dms_hash_path(url_or_route: str = "") -> str:
+    text = (url_or_route or "").strip()
+    if "#" in text:
+        text = text.split("#", 1)[1]
+    text = text.split("?", 1)[0].strip()
+    return "/" + text.lstrip("/")
+
+
+def dms_route_url(route: str = "/dashboard") -> str:
+    return f"{DEFAULT_TARGET_URL}/#{dms_hash_path(route)}"
+
+
+def hash_route_matches(url: str, route: str) -> bool:
+    current = dms_hash_path(url)
+    expected = dms_hash_path(route)
+    if not expected or expected == "/":
+        return False
+    return current == expected or current.startswith(expected + "/")
+
+
+def goto_dms_route(page: Any, route: str, *, timeout_ms: int = 20_000) -> str:
+    """Open a clean DMS hash route and wait until the tab actually lands there.
+
+    Assigning window.location.hash often leaves the previous Vue page mounted,
+    so crawlers would click Query/Export on the leftover screen.
+    """
+    target = dms_route_url(route)
+    expected = dms_hash_path(route)
+    page.goto(target, wait_until="domcontentloaded", timeout=timeout_ms)
+    deadline = time.monotonic() + max(timeout_ms / 1000.0, 1.0)
+    last = page.url or ""
+    while time.monotonic() < deadline:
+        last = page.url or ""
+        hint = dms_session_hint(last)
+        if hint in {"login", "sso"}:
+            raise RuntimeError(f"Need login while opening {expected}: {last[:120]}")
+        if hash_route_matches(last, expected):
+            break
+        time.sleep(0.2)
+    else:
+        raise RuntimeError(f"DMS route did not change to {expected}: {last[:160]}")
+    try:
+        page.wait_for_selector(
+            "section.mixButton, .el-table, #datePicker",
+            timeout=min(int(timeout_ms), 15_000),
+        )
+    except Error:
+        page.wait_for_timeout(800)
+    page.wait_for_timeout(400)
+    return last
+
+
 def dms_session_hint(url: str = "") -> str:
     """Classify a tab URL: ok / sso / login / other."""
     text = (url or "").lower()

@@ -22,6 +22,7 @@ from pathlib import Path
 from playwright.sync_api import Error, sync_playwright
 
 from dfmc_browser_utils import (
+    DMS_CLEAN_URL,
     collect_page_hints,
     connect_browser_over_cdp,
     dms_session_hint,
@@ -35,7 +36,6 @@ from dfmc_browser_utils import (
     load_crawl_schedule,
     ensure_dms_tab,
     refresh_block_reason,
-    sanitize_dms_url,
     wait_for_dms_session,
 )
 
@@ -94,7 +94,7 @@ def _refresh_dms(plugin_root: Path, cdp_port: int, *, wait_sso: bool) -> tuple[s
                 print(f"Need login on tab: {url[:80]}")
                 return "need_login", ""
 
-            target = sanitize_dms_url(url)
+            target = DMS_CLEAN_URL
             page.goto(target, wait_until="domcontentloaded", timeout=10_000)
             print(f"Navigated: {target[:80]}")
             return "refreshed", ""

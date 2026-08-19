@@ -37,6 +37,7 @@ from dfmc_browser_utils import (
     connect_browser_over_cdp,
     ensure_cdp_browser_running,
     find_dms_page,
+    goto_dms_route,
     get_default_state_file,
     get_export_lock_path,
     get_session_home,
@@ -64,22 +65,7 @@ def validate_logged_in(page: Page) -> None:
 
 
 def navigate_to_maintenance_order_page(page: Page) -> None:
-    try:
-        page.evaluate(f"window.location.hash = '{MAINTENANCE_ORDER_ROUTE}'")
-    except Error:
-        current_url = page.url
-        if "?code=" in current_url:
-            code = current_url.split("?code=")[1].split("#")[0].split("&")[0]
-            target = f"https://{DMS_HOST}/?code={code}#{MAINTENANCE_ORDER_ROUTE}"
-            page.goto(target, wait_until="domcontentloaded", timeout=15_000)
-        else:
-            page.goto(f"https://{DMS_HOST}#{MAINTENANCE_ORDER_ROUTE}", wait_until="domcontentloaded", timeout=15_000)
-
-    try:
-        page.wait_for_selector("section.mixButton", timeout=15_000)
-    except Error:
-        page.wait_for_selector(".el-table", timeout=15_000)
-    page.wait_for_timeout(800)
+    goto_dms_route(page, MAINTENANCE_ORDER_ROUTE)
 
 
 def reset_filters(page: Page) -> None:
