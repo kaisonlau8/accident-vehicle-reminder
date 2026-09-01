@@ -41,6 +41,7 @@ from dfmc_browser_utils import (
     get_default_state_file,
     get_export_lock_path,
     get_session_home,
+    hard_refresh_dms,
     release_export_lock,
 )
 from time_utils import beijing_strftime, beijing_today
@@ -490,6 +491,11 @@ def main() -> int:
             )
         except Exception:
             pass
+    finally:
+        try:
+            hard_refresh_dms(plugin_root, label="post-crawl")
+        except Exception as exc:
+            print(f"  [WARN] post-crawl hard refresh failed: {exc}")
 
     manifest_path = output_dir / "crawl_manifest.json"
     manifest = {

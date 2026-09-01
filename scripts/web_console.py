@@ -49,6 +49,8 @@ from dfmc_browser_utils import (
     get_runtime_dir,
     get_session_home,
     is_cdp_browser_command,
+    load_session_monitor,
+    observe_dms_session,
     launch_shared_cdp_browser,
     process_is_running,
     read_browser_state,
@@ -386,7 +388,13 @@ def _get_keepalive_info() -> dict:
     port = int(browser.get("port") or 0)
     last_result = str(state.get("lastResult") or "")
     session_hint = _session_hint_for_port(port)
-    need_login = last_result == "need_login" or session_hint in {"login", "sso"}
+    monitor = load_session_monitor(PLUGIN_ROOT)
+    monitor_status = str((monitor.get("current") or {}).get("status") or "")
+    need_login = (
+        last_result == "need_login"
+        or session_hint in {"login", "sso"}
+        or monitor_status == "logged_out"
+    )
     return {
         "running": running,
         "pid": int(state.get("pid") or 0),
@@ -399,6 +407,7 @@ def _get_keepalive_info() -> dict:
         "cycle": int(state.get("cycle") or 0),
         "session_hint": session_hint,
         "need_login": need_login,
+        "session_monitor": monitor,
     }
 
 
@@ -485,6 +494,10 @@ def _keepalive_watchdog_loop() -> None:
     while not keepalive_state["stop"]:
         try:
             _ensure_keepalive_process()
+        except Exception:
+            pass
+        try:
+            observe_dms_session(PLUGIN_ROOT, source="watchdog")
         except Exception:
             pass
         time.sleep(30)
@@ -986,6 +999,7 @@ def api_status():
         "skip_crawl": bool(scheduler_state.get("skip_crawl", False)),
         "keepalive_running": keepalive_info["running"],
         "keepalive_info": keepalive_info,
+        "session_monitor": keepalive_info.get("session_monitor") or load_session_monitor(PLUGIN_ROOT),
     })
 
 

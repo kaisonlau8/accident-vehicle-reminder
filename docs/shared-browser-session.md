@@ -41,6 +41,7 @@ $DFMC_DMS_SESSION_HOME/
 - **提前 3 分钟**（`pre_minutes`）进入禁刷，直到爬取 `unregister` 完成
 - 若到点未开跑，最多再等 **45 分钟**（`await_start_minutes`）后恢复强刷
 - 拿锁 / 放锁时自动写 `crawl_registry.json`
+- 每次爬取结束后在当前标签打开 `https://m-dms.dfmc.com.cn/` 做一次整页跳转（等同地址栏重输）
 
 ## 约定
 

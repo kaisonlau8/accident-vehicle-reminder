@@ -101,6 +101,22 @@
   {% endif %}
 </div>
 
+<div class="card" style="border-left: 4px solid var(--orange);">
+  <h2>DMS 登录监控</h2>
+  <p style="color:var(--gray); font-size:13px; margin-bottom:12px;">
+    每 30 秒采样共享浏览器标签，收集「退出登录 / SSO / 会话过期」事件。不会把导航里的「退出登录」按钮当成已登出。
+  </p>
+  <p style="font-size:14px; margin-bottom:8px;">
+    当前：<strong id="session-monitor-status">—</strong>
+    　今日退出：<strong id="session-monitor-count">0</strong>
+    　最近变化：<span id="session-monitor-changed" style="color:var(--gray)">—</span>
+  </p>
+  <table>
+    <thead><tr><th>时间</th><th>状态</th><th>来源</th><th>页面</th><th>依据</th></tr></thead>
+    <tbody id="session-monitor-events"><tr><td colspan="5" style="color:var(--gray)">加载中…</td></tr></tbody>
+  </table>
+</div>
+
 {% if task_status.running %}
 <div class="card" style="border-left: 4px solid var(--orange);">
   <h2>当前任务: {{ task_status.task }}</h2>
@@ -152,6 +168,28 @@ function renderKeepaliveStatus() {
   detailEl.textContent = '下次刷新 ' + secondsLeft + ' 秒';
 }
 
+function renderSessionMonitor(m) {
+  var statusEl = document.getElementById('session-monitor-status');
+  var countEl = document.getElementById('session-monitor-count');
+  var changedEl = document.getElementById('session-monitor-changed');
+  var table = document.getElementById('session-monitor-events');
+  if (!statusEl || !m) return;
+  var labels = {logged_in:'已登录', logged_out:'退出登录', missing:'无标签', offline:'浏览器离线', other:'其他'};
+  var status = (m.current && m.current.status) || 'other';
+  statusEl.textContent = labels[status] || status;
+  statusEl.style.color = status === 'logged_out' ? 'var(--orange)' : (status === 'logged_in' ? 'var(--turquoise)' : 'var(--gray)');
+  if (countEl) countEl.textContent = (m.today && m.today.logoutEvents) || 0;
+  if (changedEl) changedEl.textContent = m.lastChangeAt || '—';
+  if (table) {
+    var events = (m.recent || []).slice().reverse();
+    table.innerHTML = events.length ? events.map(function (e) {
+      var page = (e.title || e.url || '').slice(0, 48);
+      var marks = (e.markers || []).join(', ');
+      return '<tr><td>' + (e.at || '') + '</td><td>' + (labels[e.status] || e.status) + '</td><td>' + (e.source || '') + '</td><td title="' + (e.url || '') + '">' + page + '</td><td>' + marks + '</td></tr>';
+    }).join('') : '<tr><td colspan="5" style="color:var(--gray)">尚无记录</td></tr>';
+  }
+}
+
 function refreshDashboardStatus() {
   fetch('/api/status').then(r => r.json()).then(d => {
     keepaliveRunning = !!(d.keepalive_info && d.keepalive_info.running);
@@ -173,6 +211,7 @@ function refreshDashboardStatus() {
       badge.className = 'badge ' + (keepaliveNeedLogin ? 'badge-orange' : (d.browser_ok ? 'badge-green' : 'badge-red'));
     }
     renderKeepaliveStatus();
+    renderSessionMonitor(d.session_monitor || (d.keepalive_info && d.keepalive_info.session_monitor) || {});
 
     var skipEl = document.getElementById('skip-crawl-status');
     if (skipEl) {

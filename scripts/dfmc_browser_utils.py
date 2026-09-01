@@ -21,17 +21,19 @@ Layout under the session home (defaults to the plugin root when unset):
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import re
 import socket
+import struct
 import subprocess
 import time
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from zoneinfo import ZoneInfo
 
 from playwright.sync_api import Browser, Error, Playwright
@@ -39,6 +41,7 @@ from playwright.sync_api import Browser, Error, Playwright
 
 DEFAULT_TARGET_URL = "https://m-dms.dfmc.com.cn"
 DMS_HOST = "m-dms.dfmc.com.cn"
+DMS_ORIGIN_URL = "https://m-dms.dfmc.com.cn/"
 DMS_CLEAN_URL = "https://m-dms.dfmc.com.cn/#/dashboard"
 DEFAULT_STATE_FILE_NAME = "browser-state.json"
 EXPORT_LOCK_NAME = "exporting.lock"
@@ -46,6 +49,39 @@ CRAWL_SCHEDULE_NAME = "crawl_schedule.json"
 CRAWL_REGISTRY_NAME = "crawl_registry.json"
 KEEPALIVE_LOG_NAME = "keepalive.log"
 KEEPALIVE_LOG_MAX_BYTES = 2 * 1024 * 1024
+SESSION_MONITOR_NAME = "session_monitor.json"
+SESSION_EVENTS_NAME = "session_events.jsonl"
+SESSION_EVENTS_MAX_BYTES = 2 * 1024 * 1024
+SESSION_MONITOR_HEARTBEAT_SECONDS = 300
+LOGGED_OUT_TITLE_MARKERS = (
+    "您已退出登录",
+    "已退出登录",
+    "登录已过期",
+    "登陆已过期",
+    "统一身份认证",
+    "统一认证",
+)
+LOGGED_OUT_BODY_MARKERS = (
+    "您已退出登录",
+    "已退出登录",
+    "登录已过期",
+    "登陆已过期",
+    "会话已过期",
+    "会话过期",
+    "请重新登录",
+    "请重新登陆",
+    "请先登录",
+    "登录失效",
+    "登陆失效",
+    "登录超时",
+)
+SESSION_STATUS_LABELS = {
+    "logged_in": "已登录",
+    "logged_out": "退出登录",
+    "missing": "无标签",
+    "offline": "浏览器离线",
+    "other": "其他",
+}
 SESSION_HOME_ENV = "DFMC_DMS_SESSION_HOME"
 BROWSER_EXECUTABLE_ENV = "DFMC_DMS_BROWSER_EXECUTABLE"
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
@@ -421,7 +457,7 @@ def unregister_crawl(plugin_root: Path, owner: str = "") -> None:
 
 
 def refresh_block_reason(plugin_root: Path) -> Optional[str]:
-    """Return a human reason if keepalive must skip page.reload; else None."""
+    """Return a human reason if keepalive must skip the origin hard refresh; else None."""
     # 1) Legacy / concurrent export lock
     lock_file = get_export_lock_path(plugin_root)
     if lock_file.exists():
@@ -629,8 +665,8 @@ def close_cdp_page(port: int, target_id: str) -> bool:
 
 
 def open_dms_tab(port: int, url: str = "") -> bool:
-    """Open a clean DMS tab via Chrome HTTP CDP."""
-    target = sanitize_dms_url(url) if url else DMS_CLEAN_URL
+    """Open a DMS tab via Chrome HTTP CDP. Default is origin (full document jump)."""
+    target = sanitize_dms_url(url) if url else DMS_ORIGIN_URL
     try:
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/json/new?{quote(target, safe='')}",
@@ -970,7 +1006,7 @@ def launch_shared_cdp_browser(plugin_root: Path, browser_name: str = "") -> dict
         "pid": proc.pid,
         "browserExecutable": str(executable),
         "browserProfileDir": str(profile),
-        "targetUrl": DMS_CLEAN_URL,
+        "targetUrl": DMS_ORIGIN_URL,
         "startedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "sessionHome": str(get_session_home(plugin_root)),
     }
@@ -987,3 +1023,383 @@ def find_dms_page(context: Any) -> Optional[Any]:
         except Error:
             continue
     return None
+
+
+def find_session_page(context: Any) -> Optional[Any]:
+    """DMS tab first; otherwise SSO / login tab."""
+    page = find_dms_page(context)
+    if page is not None:
+        return page
+    for page in context.pages:
+        try:
+            if dms_session_hint(page.url or "") in {"ok", "sso", "login"}:
+                return page
+        except Error:
+            continue
+    return None
+
+
+def _open_raw_url_tab(port: int, url: str) -> dict[str, Any]:
+    """Open a tab with the exact URL (do not rewrite to #/dashboard)."""
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/json/new?{quote(url, safe='')}",
+        method="PUT",
+    )
+    body = urllib.request.urlopen(req, timeout=5).read()
+    data = json.loads(body.decode("utf-8"))
+    return data if isinstance(data, dict) else {}
+
+
+def hard_refresh_dms(plugin_root: Path, port: int = 0, *, label: str = "hard-refresh") -> str:
+    """Re-enter https://m-dms.dfmc.com.cn/ in the current tab (full document jump).
+
+    Hash routes like #/dashboard do not reload the document. Typing the origin
+    URL does: Chromium navigates from scratch and finishes the SSO bounce.
+    Call this when no other Playwright connection is holding the tab.
+    """
+    from playwright.sync_api import sync_playwright
+
+    state_file = get_default_state_file(plugin_root)
+    try:
+        cdp_port = int(port) if int(port or 0) > 0 else ensure_cdp_browser_running(
+            state_file, plugin_root=plugin_root
+        )
+    except Exception as exc:
+        print(f"  [WARN] {label} skipped: {exc}")
+        return "skipped:no_browser"
+
+    ensure_dms_tab(cdp_port)
+    landed = ""
+    try:
+        with sync_playwright() as pw:
+            browser = connect_browser_over_cdp(pw, cdp_port)
+            if not browser.contexts:
+                raise RuntimeError("no browser context")
+            context = browser.contexts[0]
+            page = find_session_page(context)
+            if page is None:
+                page = context.pages[0] if context.pages else context.new_page()
+            page.goto(DMS_ORIGIN_URL, wait_until="domcontentloaded", timeout=20_000)
+            landed = page.url or ""
+            print(f"  {label}: {DMS_ORIGIN_URL}")
+    except Exception as exc:
+        print(f"  [WARN] {label} via Playwright failed: {exc}")
+        try:
+            created = _open_raw_url_tab(cdp_port, DMS_ORIGIN_URL)
+            keep_id = str(created.get("id") or "")
+            for page in list_cdp_pages(cdp_port):
+                page_id = str(page.get("id") or "")
+                hint = dms_session_hint(str(page.get("url") or ""))
+                if page_id and page_id != keep_id and hint in {"ok", "sso", "login"}:
+                    close_cdp_page(cdp_port, page_id)
+            print(f"  {label} (new tab): {DMS_ORIGIN_URL}")
+        except Exception as fallback_exc:
+            print(f"  [WARN] {label} fallback failed: {fallback_exc}")
+            return f"error:{fallback_exc}"
+
+    hints = wait_for_dms_session(cdp_port, 30.0)
+    hint = str(hints.get("hint") or "other")
+    url = str(hints.get("dms_url") or landed or "")[:80]
+    print(f"  {label} landed hint={hint} {url}")
+    try:
+        observe_dms_session(plugin_root, source=label, port=cdp_port)
+    except Exception:
+        pass
+    return f"refreshed:{hint}"
+
+
+def get_session_monitor_path(plugin_root: Path) -> Path:
+    return get_runtime_dir(plugin_root) / SESSION_MONITOR_NAME
+
+
+def get_session_events_path(plugin_root: Path) -> Path:
+    return get_runtime_dir(plugin_root) / SESSION_EVENTS_NAME
+
+
+def _recv_exact(sock: socket.socket, n: int) -> bytes:
+    data = b""
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if not chunk:
+            break
+        data += chunk
+    return data
+
+
+def _ws_mask_frame(payload: bytes) -> bytes:
+    mask = os.urandom(4)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+    header = bytearray([0x81])
+    length = len(payload)
+    if length < 126:
+        header.append(0x80 | length)
+    elif length < 65536:
+        header.extend(struct.pack("!BH", 0x80 | 126, length))
+    else:
+        header.extend(struct.pack("!BQ", 0x80 | 127, length))
+    header.extend(mask)
+    return bytes(header) + masked
+
+
+def _ws_recv_text(sock: socket.socket, timeout: float) -> bytes:
+    sock.settimeout(max(timeout, 0.1))
+    while True:
+        hdr = _recv_exact(sock, 2)
+        if len(hdr) < 2:
+            return b""
+        opcode = hdr[0] & 0x0F
+        masked = bool(hdr[1] & 0x80)
+        length = hdr[1] & 0x7F
+        if length == 126:
+            ext = _recv_exact(sock, 2)
+            length = struct.unpack("!H", ext)[0]
+        elif length == 127:
+            ext = _recv_exact(sock, 8)
+            length = struct.unpack("!Q", ext)[0]
+        mask = _recv_exact(sock, 4) if masked else b""
+        data = _recv_exact(sock, int(length))
+        if masked and mask:
+            data = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+        if opcode == 1:
+            return data
+        if opcode == 8:
+            return b""
+
+
+def _cdp_call(ws_url: str, method: str, params: dict[str, Any], timeout: float = 5.0) -> dict[str, Any]:
+    parsed = urlparse(ws_url)
+    host = parsed.hostname or "127.0.0.1"
+    port = int(parsed.port or 80)
+    path = parsed.path or "/"
+    if parsed.query:
+        path = f"{path}?{parsed.query}"
+    key = base64.b64encode(os.urandom(16)).decode("ascii")
+    request = (
+        f"GET {path} HTTP/1.1\r\n"
+        f"Host: {host}:{port}\r\n"
+        f"Upgrade: websocket\r\n"
+        f"Connection: Upgrade\r\n"
+        f"Sec-WebSocket-Key: {key}\r\n"
+        f"Sec-WebSocket-Version: 13\r\n"
+        f"\r\n"
+    )
+    sock = socket.create_connection((host, port), timeout=timeout)
+    try:
+        sock.sendall(request.encode("ascii"))
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = sock.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+        payload = json.dumps({"id": 1, "method": method, "params": params}, ensure_ascii=False).encode("utf-8")
+        sock.sendall(_ws_mask_frame(payload))
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            raw = _ws_recv_text(sock, deadline - time.monotonic())
+            if not raw:
+                continue
+            data = json.loads(raw.decode("utf-8"))
+            if isinstance(data, dict) and data.get("id") == 1:
+                return data
+        return {}
+    finally:
+        try:
+            sock.close()
+        except OSError:
+            pass
+
+
+def _page_dom_snapshot(page: dict[str, Any]) -> dict[str, str]:
+    ws_url = str(page.get("webSocketDebuggerUrl") or "")
+    title = str(page.get("title") or "")
+    if not ws_url:
+        return {"title": title, "body": ""}
+    expression = (
+        "(() => ({"
+        "title: document.title || '',"
+        "body: ((document.body && document.body.innerText) || '').replace(/\\s+/g, ' ').slice(0, 800)"
+        "}))()"
+    )
+    try:
+        result = _cdp_call(
+            ws_url,
+            "Runtime.evaluate",
+            {"expression": expression, "returnByValue": True},
+            timeout=4.0,
+        )
+        value = (((result.get("result") or {}).get("result") or {}).get("value")) or {}
+        if isinstance(value, dict):
+            return {
+                "title": str(value.get("title") or title),
+                "body": str(value.get("body") or ""),
+            }
+    except Exception:
+        pass
+    return {"title": title, "body": ""}
+
+
+def classify_dms_login_status(url: str, title: str, body: str, hint: str = "") -> tuple[str, list[str]]:
+    """Return (status, markers). Do not treat the logged-in menu item「退出登录」as logout."""
+    hint = hint or dms_session_hint(url)
+    markers: list[str] = []
+    url_l = (url or "").lower()
+    title_text = title or ""
+    body_text = body or ""
+
+    if hint in {"login", "sso"}:
+        markers.append(f"url:{hint}")
+    if "/logout" in url_l or "/signout" in url_l or "signed-out" in url_l:
+        markers.append("url:logout")
+    for item in LOGGED_OUT_TITLE_MARKERS:
+        if item.lower() in title_text.lower():
+            markers.append(f"title:{item}")
+    for item in LOGGED_OUT_BODY_MARKERS:
+        if item in body_text:
+            markers.append(f"body:{item}")
+
+    if markers:
+        return "logged_out", markers
+    if hint == "ok":
+        return "logged_in", []
+    if hint in {"", "other"} and not (url or "").strip():
+        return "missing", []
+    return "other", []
+
+
+def inspect_dms_login(port: int) -> dict[str, Any]:
+    """Read-only snapshot of the shared DMS tab login state."""
+    if not port or not cdp_is_ready(port):
+        return {
+            "status": "offline",
+            "hint": "",
+            "url": "",
+            "title": "",
+            "markers": [],
+            "snippet": "",
+        }
+    hints = collect_page_hints(port)
+    pages = [p for p in (hints.get("pages") or []) if isinstance(p, dict)]
+    target = None
+    for page in pages:
+        page_hint = dms_session_hint(str(page.get("url") or ""))
+        if page_hint in {"ok", "sso", "login"}:
+            target = page
+            break
+    if target is None and pages:
+        target = pages[0]
+    if target is None:
+        return {
+            "status": "missing",
+            "hint": "",
+            "url": "",
+            "title": "",
+            "markers": [],
+            "snippet": "",
+        }
+
+    url = str(target.get("url") or "")
+    hint = dms_session_hint(url)
+    title = str(target.get("title") or "")
+    body = ""
+    if hint == "ok":
+        dom = _page_dom_snapshot(target)
+        title = dom.get("title") or title
+        body = dom.get("body") or ""
+    elif hint in {"login", "sso"}:
+        title = title or str(target.get("title") or "")
+
+    status, markers = classify_dms_login_status(url, title, body, hint=hint)
+    snippet = ""
+    if body and status == "logged_out":
+        snippet = body[:200]
+    return {
+        "status": status,
+        "hint": hint,
+        "url": url[:240],
+        "title": title[:120],
+        "markers": markers,
+        "snippet": snippet,
+    }
+
+
+def load_session_monitor(plugin_root: Path) -> dict[str, Any]:
+    path = get_session_monitor_path(plugin_root)
+    if not path.exists():
+        return {
+            "current": {},
+            "lastChangeAt": "",
+            "today": {"date": "", "logoutEvents": 0, "samples": 0},
+            "recent": [],
+        }
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def observe_dms_session(plugin_root: Path, source: str = "poll", port: int = 0) -> dict[str, Any]:
+    """Sample the DMS tab. Record only status changes (plus logout heartbeat)."""
+    state_file = get_default_state_file(plugin_root)
+    cdp_port = int(port or 0)
+    if cdp_port <= 0:
+        try:
+            payload = read_browser_state(state_file) if state_file.exists() else {}
+            cdp_port = int(payload.get("port") or 0)
+        except Exception:
+            cdp_port = 0
+    snapshot = inspect_dms_login(cdp_port)
+    now = _beijing_now()
+    today = now.strftime("%Y-%m-%d")
+    event = {
+        "at": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "epoch": int(now.timestamp()),
+        "source": source,
+        "status": snapshot.get("status") or "other",
+        "hint": snapshot.get("hint") or "",
+        "url": snapshot.get("url") or "",
+        "title": snapshot.get("title") or "",
+        "markers": snapshot.get("markers") or [],
+        "snippet": snapshot.get("snippet") or "",
+    }
+
+    summary = load_session_monitor(plugin_root)
+    current = summary.get("current") if isinstance(summary.get("current"), dict) else {}
+    today_info = summary.get("today") if isinstance(summary.get("today"), dict) else {}
+    if str(today_info.get("date") or "") != today:
+        today_info = {"date": today, "logoutEvents": 0, "samples": 0}
+    today_info["samples"] = int(today_info.get("samples") or 0) + 1
+
+    prev_status = str(current.get("status") or "")
+    changed = prev_status != event["status"]
+    heartbeat = False
+    if not changed and event["status"] == "logged_out":
+        last_epoch = int(current.get("epoch") or 0)
+        heartbeat = event["epoch"] - last_epoch >= SESSION_MONITOR_HEARTBEAT_SECONDS
+
+    if changed and event["status"] == "logged_out":
+        today_info["logoutEvents"] = int(today_info.get("logoutEvents") or 0) + 1
+
+    recent = [item for item in (summary.get("recent") or []) if isinstance(item, dict)]
+    if changed or heartbeat:
+        event["prevStatus"] = prev_status
+        events_path = get_session_events_path(plugin_root)
+        rotate_keepalive_log(events_path, SESSION_EVENTS_MAX_BYTES)
+        with events_path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event, ensure_ascii=False) + "\n")
+        recent.append(event)
+        recent = recent[-30:]
+        summary["lastChangeAt"] = event["at"]
+        print(
+            f"  Session monitor: {SESSION_STATUS_LABELS.get(event['status'], event['status'])}"
+            f" source={source} hint={event['hint']} {event['url'][:80]}"
+        )
+
+    summary["current"] = event
+    summary["today"] = today_info
+    summary["recent"] = recent
+    summary["updatedAt"] = event["at"]
+    path = get_session_monitor_path(plugin_root)
+    path.write_text(json.dumps(summary, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return summary
