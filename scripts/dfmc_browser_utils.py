@@ -568,34 +568,65 @@ def hash_route_matches(url: str, route: str) -> bool:
     return current == expected or current.startswith(expected + "/")
 
 
-def goto_dms_route(page: Any, route: str, *, timeout_ms: int = 20_000) -> str:
-    """Open a clean DMS hash route and wait until the tab actually lands there.
+def _page_href(page: Any) -> str:
+    try:
+        return str(page.evaluate("() => location.href") or "")
+    except Error:
+        return str(page.url or "")
 
-    Assigning window.location.hash often leaves the previous Vue page mounted,
-    so crawlers would click Query/Export on the leftover screen.
+
+def _wait_dms_hash(page: Any, expected: str, timeout_ms: int) -> str:
+    deadline = time.monotonic() + max(timeout_ms / 1000.0, 1.0)
+    last = _page_href(page)
+    while time.monotonic() < deadline:
+        last = _page_href(page)
+        if dms_session_hint(last) in {"login", "sso"}:
+            raise RuntimeError(f"Need login while opening {expected}: {last[:120]}")
+        if hash_route_matches(last, expected):
+            return last
+        time.sleep(0.2)
+    raise RuntimeError(f"DMS route did not change to {expected}: {last[:160]}")
+
+
+def goto_dms_route(page: Any, route: str, *, timeout_ms: int = 20_000) -> str:
+    """Open a DMS business hash route after a full origin document jump.
+
+    Playwright page.goto() on a same-origin hash URL often does not change
+    window.location, so Vue stays on the leftover page. Re-enter the origin,
+    set location.hash, and wait for section.mixButton. If the toolbar is
+    missing, put the hash in the URL and reload once.
     """
     target = dms_route_url(route)
     expected = dms_hash_path(route)
-    page.goto(target, wait_until="domcontentloaded", timeout=timeout_ms)
-    deadline = time.monotonic() + max(timeout_ms / 1000.0, 1.0)
-    last = page.url or ""
-    while time.monotonic() < deadline:
-        last = page.url or ""
-        hint = dms_session_hint(last)
-        if hint in {"login", "sso"}:
-            raise RuntimeError(f"Need login while opening {expected}: {last[:120]}")
-        if hash_route_matches(last, expected):
-            break
-        time.sleep(0.2)
-    else:
-        raise RuntimeError(f"DMS route did not change to {expected}: {last[:160]}")
+    toolbar_timeout = min(int(timeout_ms), 15_000)
+
+    page.goto(DMS_ORIGIN_URL, wait_until="domcontentloaded", timeout=timeout_ms)
+    origin_url = _page_href(page)
+    if dms_session_hint(origin_url) in {"login", "sso"}:
+        raise RuntimeError(f"Need login while opening {expected}: {origin_url[:120]}")
     try:
-        page.wait_for_selector(
-            "section.mixButton, .el-table, #datePicker",
-            timeout=min(int(timeout_ms), 15_000),
-        )
+        page.wait_for_selector(".el-menu, section.app-main", timeout=min(timeout_ms, 10_000))
     except Error:
         page.wait_for_timeout(800)
+
+    page.evaluate("hash => { window.location.hash = hash }", expected)
+    last = _wait_dms_hash(page, expected, timeout_ms)
+    try:
+        page.wait_for_selector("section.mixButton", timeout=toolbar_timeout)
+        page.wait_for_timeout(400)
+        return last
+    except Error:
+        print(f"  [WARN] {expected} missing section.mixButton, reload and retry")
+
+    page.evaluate("url => { history.replaceState(null, '', url) }", target)
+    page.reload(wait_until="domcontentloaded", timeout=timeout_ms)
+    last = _wait_dms_hash(page, expected, timeout_ms)
+    try:
+        page.wait_for_selector("section.mixButton", timeout=toolbar_timeout)
+    except Error:
+        raise RuntimeError(
+            f"DMS route {expected} opened but section.mixButton did not appear"
+        )
     page.wait_for_timeout(400)
     return last
 
