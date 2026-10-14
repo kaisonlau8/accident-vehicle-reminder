@@ -28,14 +28,13 @@ HEADERS = [
     "门店名称",
     "督导姓名",
     "督导飞书电话号",
-    "提醒人1",
-    "电话1",
-    "提醒人2",
-    "电话2",
-    "提醒人3",
-    "电话3",
-    "提醒人4",
-    "电话4",
+    "督导open_id",
+    "售后负责人",
+    "售后电话",
+    "售后open_id",
+    "门店省",
+    "门店市",
+    "门店区",
 ]
 
 
@@ -78,6 +77,19 @@ def _field_text(value: Any) -> str:
         if "name" in value:
             return str(value.get("name") or "").strip()
     return str(value).strip()
+
+
+def _parse_user(value: Any) -> tuple[str, str]:
+    """飞书联系人字段 → (姓名, open_id)。"""
+    items = value if isinstance(value, list) else ([value] if isinstance(value, dict) else [])
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("en_name") or "").strip()
+        open_id = str(item.get("id") or item.get("open_id") or "").strip()
+        if name or open_id:
+            return name, open_id
+    return "", ""
 
 
 def _normalize_phone(value: Any) -> str:
@@ -125,32 +137,42 @@ def fetch_bitable_records() -> list[dict]:
     return records
 
 
-def records_to_rows(records: list[dict]) -> list[list[Any]]:
-    """将多维表格记录转为 list.xlsx 行。"""
+def records_to_rows(records: list[dict]) -> tuple[list[list[Any]], list[str]]:
+    """将「参与考核特约店清单」记录转为 list.xlsx 行。
+
+    返回 (rows, warnings)。售后负责人联系人和手机号都空时记入 warnings。
+    """
     rows: list[list[Any]] = []
+    warnings: list[str] = []
     for idx, fields in enumerate(records, start=1):
-        store_code = _field_text(fields.get("门店编码"))
+        store_code = _field_text(fields.get("店代码") or fields.get("门店编码"))
         if not store_code:
             continue
 
-        seq = _field_text(fields.get("序号")) or str(idx)
+        sup_name, sup_open_id = _parse_user(fields.get("督导"))
+        if not sup_name:
+            sup_name = _field_text(fields.get("督导姓名"))
+        mgr_name, mgr_open_id = _parse_user(fields.get("门店售后业务负责人"))
+        mgr_phone = _normalize_phone(fields.get("售后业务负责人手机号") or fields.get("电话1"))
+        if not mgr_name and not mgr_open_id and not mgr_phone:
+            warnings.append(f"{store_code} {_field_text(fields.get('店名称') or fields.get('门店名称'))}".strip())
+
         rows.append([
-            seq,
+            _field_text(fields.get("序号")) or str(idx),
             store_code,
             _field_text(fields.get("区域")),
-            _field_text(fields.get("门店名称")),
-            _field_text(fields.get("督导姓名")),
-            _normalize_phone(fields.get("督导飞书电话号")),
-            _field_text(fields.get("提醒人1")),
-            _normalize_phone(fields.get("电话1")),
-            _field_text(fields.get("提醒人2")),
-            _normalize_phone(fields.get("电话2")),
-            _field_text(fields.get("提醒人3")),
-            _normalize_phone(fields.get("电话3")),
-            _field_text(fields.get("提醒人4")),
-            _normalize_phone(fields.get("电话4")),
+            _field_text(fields.get("店名称") or fields.get("门店名称")),
+            sup_name,
+            _normalize_phone(fields.get("督导手机号") or fields.get("督导飞书电话号")),
+            sup_open_id,
+            mgr_name,
+            mgr_phone,
+            mgr_open_id,
+            _field_text(fields.get("门店省")),
+            _field_text(fields.get("门店市")),
+            _field_text(fields.get("门店区")),
         ])
-    return rows
+    return rows, warnings
 
 
 def write_list_xlsx(rows: list[list[Any]], backup: bool = True) -> Path | None:
@@ -190,16 +212,19 @@ def load_sync_state() -> dict:
 def sync_contacts_from_bitable(*, backup: bool = True) -> dict:
     """从飞书多维表格同步联系人到 list.xlsx。"""
     records = fetch_bitable_records()
-    rows = records_to_rows(records)
+    rows, missing_managers = records_to_rows(records)
     if not rows:
-        raise RuntimeError("多维表格未返回有效门店记录（门店编码为空）")
+        raise RuntimeError("多维表格未返回有效门店记录（店代码为空）")
 
     backup_path = write_list_xlsx(rows, backup=backup)
+    for label in missing_managers:
+        print(f"[bitable-sync] 无售后负责人，门店消息将跳过: {label}")
     result = {
         "ok": True,
         "synced_at": beijing_strftime("%Y-%m-%d %H:%M:%S"),
         "record_count": len(records),
         "store_count": len(rows),
+        "missing_manager_count": len(missing_managers),
         "backup": str(backup_path.name) if backup_path else "",
         "source": "bitable",
     }

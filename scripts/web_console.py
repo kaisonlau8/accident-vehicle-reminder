@@ -546,16 +546,20 @@ def _start_contacts_sync_watchdog() -> None:
 def _format_rule_recipients(rule: dict, stores_config: dict) -> str:
     """将规则原始 recipients 转成控制台友好的展示文本。"""
     role_labels = {
-        "remind_all": "门店提醒人（1-4）",
-        "store_service_manager": "门店服务经理（提醒人1）",
+        "remind_all": "门店售后负责人",
+        "store_service_manager": "门店售后负责人",
         "supervisor": "区域督导",
+        "national": "全国收件人",
     }
     national = stores_config.get("national_recipients", {})
     national_names = [str(name).strip() for name in national.keys() if str(name).strip()] if isinstance(national, dict) else []
 
     display = []
-    include_national = False
+    include_national = rule.get("scope") in {"region", "national"} or rule.get("id") in {4, 5}
     for role in rule.get("recipients", []):
+        if role == "national":
+            include_national = True
+            continue
         if role in role_labels:
             display.append(role_labels[role])
         else:
@@ -563,6 +567,8 @@ def _format_rule_recipients(rule: dict, stores_config: dict) -> str:
 
     if include_national and national_names:
         display.append(f"全国收件人（{'、'.join(national_names)}）")
+    elif include_national:
+        display.append("全国收件人")
 
     return "，".join(display) if display else "—"
 
@@ -846,21 +852,38 @@ def contacts_page():
     # 按区域分组门店
     store_list = []
     for code, info in stores.items():
+        manager = info.get("service_manager") or {}
+        supervisor = info.get("supervisor") or {}
         store_list.append({
             "code": code,
             "name": info.get("name", ""),
             "region": info.get("region", ""),
-            "supervisor": info.get("supervisor", {}).get("name", ""),
-            "sup_phone": info.get("supervisor", {}).get("phone", ""),
-            "remind_phones": info.get("remind_phones", []),
+            "supervisor": supervisor.get("name", ""),
+            "manager": manager.get("name", ""),
+            "manager_ok": bool(manager.get("open_id") or manager.get("phone")),
         })
     store_list.sort(key=lambda s: (s["region"], s["code"]))
 
-    national_list = [
-        {"key": key, "phone": phone}
-        for key, phone in sorted(national.items())
-        if str(phone or "").strip()
-    ]
+    from feishu_client import cached_open_id
+
+    national_list = []
+    if isinstance(national, dict):
+        for key, value in sorted(national.items()):
+            if isinstance(value, dict):
+                phone = str(value.get("phone") or "").strip()
+                open_id = str(value.get("open_id") or "").strip()
+            else:
+                phone = str(value or "").strip()
+                open_id = ""
+            if not phone and not open_id:
+                continue
+            if not open_id and phone:
+                open_id = cached_open_id(phone)
+            national_list.append({
+                "key": key,
+                "phone": phone,
+                "resolved": bool(open_id),
+            })
 
     sync_ok = request.args.get("sync_ok")
     sync_message = request.args.get("sync_msg", "")
@@ -926,6 +949,9 @@ def contacts_national_add():
     phone = phone.replace("+86-", "").replace("+86", "").replace(" ", "")
     if not key or not phone:
         return redirect(url_for("contacts_page"))
+
+    from feishu_client import resolve_phone_to_open_id
+    resolve_phone_to_open_id(phone)
 
     stores_data = _load_stores_json()
     national = stores_data.get("national_recipients", {})
