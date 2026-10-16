@@ -35,64 +35,101 @@ def _save_alert_history(history: dict):
         json.dump(history, f, ensure_ascii=False, indent=2)
 
 
-def load_stores_config() -> dict:
-    """从 list.xlsx 读取门店→区域→人员映射，生成与原 stores.json 相同结构。
+def _cell(value) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if text.endswith(".0") and text[:-2].isdigit():
+        text = text[:-2]
+    return text
 
-    Excel 格式：
-    序号 | 门店编码 | 区域 | 门店名称 | 督导姓名 | 督导飞书电话号
-         | 提醒人1 | 电话1 | 提醒人2 | 电话2 | 提醒人3 | 电话3 | 提醒人4 | 电话4
+
+def _person(name: str, phone: str, open_id: str = "") -> dict:
+    return {"name": name.strip(), "phone": phone.strip(), "open_id": open_id.strip()}
+
+
+def _person_reachable(person: dict | None) -> bool:
+    if not person:
+        return False
+    return bool(str(person.get("open_id") or "").strip() or str(person.get("phone") or "").strip())
+
+
+def load_stores_config() -> dict:
+    """从 list.xlsx 读取门店→区域→督导/售后负责人。
+
+    列：门店编码、区域、门店名称、督导姓名、督导飞书电话号、督导open_id、
+    售后负责人、售后电话、售后open_id。省市区只缓存。
+    全国收件人仍从 config/stores.json 读取。
     """
     if not LIST_XLSX_PATH.exists():
-        return {"stores": {}, "regions": {}, "national_recipients": {}}
+        return {"stores": {}, "regions": {}, "national_recipients": _load_national_recipients()}
 
     wb = openpyxl.load_workbook(str(LIST_XLSX_PATH), data_only=True)
     ws = wb[wb.sheetnames[0]]
+    header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None) or ()
+    headers = [_cell(cell) for cell in header_row]
+    index = {name: i for i, name in enumerate(headers) if name}
+
+    def col(row: tuple, *names: str) -> str:
+        for name in names:
+            pos = index.get(name)
+            if pos is None or pos >= len(row):
+                continue
+            text = _cell(row[pos])
+            if text:
+                return text
+        return ""
 
     stores = {}
     regions = {}
-    supervisors_seen = {}  # 督导姓名 → {name, phone}
 
     for row in ws.iter_rows(min_row=2, values_only=True):
-        store_code = str(row[1] or "").strip()
+        store_code = col(row, "门店编码", "店代码")
         if not store_code:
             continue
 
-        region_name = str(row[2] or "").strip()
-        store_name = str(row[3] or "").strip()
-        sup_name = str(row[4] or "").strip()
-        sup_phone = str(row[5] or "").strip() if row[5] else ""
-
-        # 提醒人1~4
-        remind_phones = []
-        for i in [7, 9, 11, 13]:
-            phone = str(row[i] or "").strip() if row[i] else ""
-            if phone:
-                remind_phones.append(phone)
+        region_name = col(row, "区域")
+        store_name = col(row, "门店名称", "店名称")
+        supervisor = _person(
+            col(row, "督导姓名", "督导"),
+            col(row, "督导飞书电话号", "督导手机号"),
+            col(row, "督导open_id"),
+        )
+        # 旧表没有售后负责人列时，退回提醒人1，避免未同步前完全发不出去。
+        manager = _person(
+            col(row, "售后负责人", "提醒人1"),
+            col(row, "售后电话", "电话1"),
+            col(row, "售后open_id"),
+        )
 
         stores[store_code] = {
             "name": store_name,
             "region": region_name,
-            "service_manager": {"name": "", "phone": remind_phones[0] if remind_phones else ""},
-            "supervisor": {"name": sup_name, "phone": sup_phone},
-            "remind_phones": remind_phones,
+            "province": col(row, "门店省"),
+            "city": col(row, "门店市"),
+            "district": col(row, "门店区"),
+            "service_manager": manager,
+            "supervisor": supervisor,
         }
 
-        # 区域信息
-        if region_name and sup_name:
-            supervisors_seen.setdefault(sup_name, {"name": sup_name, "phone": sup_phone})
-            regions[region_name] = {"name": region_name, "supervisor": supervisors_seen[sup_name]}
+        if region_name and _person_reachable(supervisor):
+            regions[region_name] = {"name": region_name, "supervisor": supervisor}
 
-    # national_recipients: 从 stores.json 读取，由控制台维护
-    nr = {}
+    return {
+        "stores": stores,
+        "regions": regions,
+        "national_recipients": _load_national_recipients(),
+    }
+
+
+def _load_national_recipients() -> dict:
     stores_json_path = CONFIG_DIR / "stores.json"
-    if stores_json_path.exists():
-        with open(stores_json_path, "r", encoding="utf-8") as f:
-            legacy = json.load(f)
-            nr = legacy.get("national_recipients", {})
-            if isinstance(nr, list):
-                nr = {}
-
-    return {"stores": stores, "regions": regions, "national_recipients": nr}
+    if not stores_json_path.exists():
+        return {}
+    with open(stores_json_path, "r", encoding="utf-8") as f:
+        legacy = json.load(f)
+    nr = legacy.get("national_recipients", {})
+    return nr if isinstance(nr, dict) else {}
 
 
 def load_rules_config() -> list[dict]:
@@ -101,73 +138,97 @@ def load_rules_config() -> list[dict]:
         return json.load(f)["rules"]
 
 
-def _get_recipient_phones(rule: dict, store_config: dict, store_code: str) -> list[str]:
-    """获取单条告警收件人手机号。
+def _as_target(person: dict | None) -> dict | None:
+    if not isinstance(person, dict):
+        return None
+    name = str(person.get("name") or "").strip()
+    phone = str(person.get("phone") or "").strip()
+    open_id = str(person.get("open_id") or "").strip()
+    if not phone and not open_id:
+        return None
+    return {"name": name, "phone": phone, "open_id": open_id}
 
-    Rule 1 (告警): 只通知门店提醒人（提醒人1~4）
-    Rule 3 (门店报表): 只通知门店提醒人1（门店服务经理）
-    """
-    phones = []
-    store_info = store_config.get("stores", {}).get(store_code, {})
 
-    for role in rule.get("recipients", []):
-        if role == "store_service_manager":
-            # 门店报表只通知提醒人1
-            mgr = store_info.get("service_manager", {})
-            if mgr.get("phone"):
-                phones.append(mgr["phone"])
-        elif role == "remind_all":
-            # 告警通知所有提醒人
-            for p in store_info.get("remind_phones", []):
-                if p:
-                    phones.append(p)
-        elif role == "supervisor":
-            region_name = store_info.get("region", "")
-            region_info = store_config.get("regions", {}).get(region_name, {})
-            sup = region_info.get("supervisor", {})
-            if sup.get("phone"):
-                phones.append(sup["phone"])
+def _dedupe_targets(people: list) -> list[dict]:
+    seen: set[str] = set()
+    out: list[dict] = []
+    for item in people:
+        if isinstance(item, str):
+            phone = item.strip()
+            target = {"name": "", "phone": phone, "open_id": ""} if phone else None
         else:
-            nr = store_config.get("national_recipients", {})
-            phone = nr.get(role, "") if isinstance(nr, dict) else ""
-            if phone:
-                phones.append(phone)
-    return list(set(phones))
+            target = _as_target(item) if isinstance(item, dict) else None
+        if not target:
+            continue
+        key = target["open_id"] or target["phone"] or target["name"]
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        out.append(target)
+    return out
 
 
-def _get_all_national_recipient_phones(store_config: dict) -> list[str]:
-    """获取控制台配置的全部全国收件人手机号。"""
+def _national_targets(store_config: dict) -> list[dict]:
+    """控制台配置的全国收件人。值为手机号字符串，或 {phone, open_id}。"""
     nr = store_config.get("national_recipients", {})
-    if not isinstance(nr, dict):
+    people: list[dict] = []
+    if isinstance(nr, dict):
+        for name, value in nr.items():
+            if isinstance(value, dict):
+                people.append({
+                    "name": str(name),
+                    "phone": str(value.get("phone") or "").strip(),
+                    "open_id": str(value.get("open_id") or "").strip(),
+                })
+            else:
+                phone = str(value or "").strip()
+                if phone:
+                    people.append({"name": str(name), "phone": phone, "open_id": ""})
+    return _dedupe_targets(people)
+
+
+_missing_manager_logged: set[str] = set()
+
+
+def _store_manager_targets(store_config: dict, store_code: str) -> list[dict]:
+    """门店告警和门店报表只发给售后业务负责人。"""
+    store_info = store_config.get("stores", {}).get(store_code, {})
+    target = _as_target(store_info.get("service_manager"))
+    if not target:
+        if store_code not in _missing_manager_logged:
+            _missing_manager_logged.add(store_code)
+            print(f"[rule] 门店 {store_code} 无售后负责人，跳过门店消息")
         return []
-    phones = []
-    for phone in nr.values():
-        phone = str(phone or "").strip()
-        if phone:
-            phones.append(phone)
-    return list(set(phones))
+    return [target]
 
 
-def _get_region_recipient_phones(region_name: str, store_config: dict) -> list[str]:
-    """获取区域报表收件人手机号（该区域督导+控制台配置的全国收件人）。"""
-    phones = []
+def _get_region_recipient_phones(region_name: str, store_config: dict) -> list[dict]:
+    """区域报表：该区域督导 + 本系统全国收件人。"""
     region_info = store_config.get("regions", {}).get(region_name, {})
-    sup = region_info.get("supervisor", {})
-    if sup.get("phone"):
-        phones.append(sup["phone"])
-    phones.extend(_get_all_national_recipient_phones(store_config))
-    return list(set(phones))
+    people = []
+    sup = _as_target(region_info.get("supervisor"))
+    if sup:
+        people.append(sup)
+    people.extend(_national_targets(store_config))
+    return _dedupe_targets(people)
 
 
-def _get_national_recipient_phones(store_config: dict) -> list[str]:
-    """获取全国报表收件人手机号（全部督导+控制台配置的全国收件人）。"""
-    phones = []
-    for region_name, region_info in store_config.get("regions", {}).items():
-        sup = region_info.get("supervisor", {})
-        if sup.get("phone"):
-            phones.append(sup["phone"])
-    phones.extend(_get_all_national_recipient_phones(store_config))
-    return list(set(phones))
+def _get_national_recipient_phones(store_config: dict) -> list[dict]:
+    """全国报表：全部区域督导 + 本系统全国收件人。"""
+    people = []
+    for region_info in store_config.get("regions", {}).values():
+        sup = _as_target(region_info.get("supervisor"))
+        if sup:
+            people.append(sup)
+    people.extend(_national_targets(store_config))
+    return _dedupe_targets(people)
+
+
+def _directory_region(rec: dict, stores_config: dict) -> str:
+    """区域以联系人表为准（华中 1 / 华中 2），门店未收录时回退 DMS 大区。"""
+    code = str(rec.get("store_code") or "").strip()
+    info = stores_config.get("stores", {}).get(code, {})
+    return str(info.get("region") or rec.get("region") or "").strip() or "未分配区域"
 
 
 def _determine_alert_level(days: int, levels: list[dict]) -> dict | None:
@@ -219,6 +280,7 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
             break
 
     alert_history = _load_alert_history()
+    levels: list[dict] = []
 
     if alert_rule:
         levels = alert_rule.get("levels", [])
@@ -234,7 +296,8 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
 
             vin = rec.get("vin", "")
             store_code = rec.get("store_code", "")
-            phones = _get_recipient_phones(alert_rule, stores_config, store_code)
+            phones = _store_manager_targets(stores_config, store_code)
+            directory_region = _directory_region(rec, stores_config)
 
             # 告警历史追踪
             hist_entry = alert_history.get(vin)
@@ -254,7 +317,7 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
                 "level": level,
                 "store_code": store_code,
                 "store_name": rec.get("store_name", ""),
-                "region": rec.get("region", ""),
+                "region": directory_region,
                 "vin": vin,
                 "vehicle_model": rec.get("vehicle_model", ""),
                 "days_in_shop": days,
@@ -277,11 +340,10 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
     for rec in active_records:
         store_groups[rec.get("store_code", "UNKNOWN")].append(rec)
 
-    # 按区域分组
+    # 按联系人表区域分组（华中 1 / 华中 2），不用 DMS「大区」原文
     region_groups = defaultdict(list)
     for rec in active_records:
-        region_name = rec.get("region", "") or "未分配区域"
-        region_groups[region_name].append(rec)
+        region_groups[_directory_region(rec, stores_config)].append(rec)
 
     # Rule 3: 门店报表
     for store_code, vehicles in store_groups.items():
@@ -312,9 +374,7 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
             "overdue_vehicles": overdue_vehicles,
             "snapshot_date": snapshot_date,
             "date_range": date_range,
-            "recipient_phones": [
-                store_info.get("service_manager", {}).get("phone", "")
-            ] if store_info.get("service_manager", {}).get("phone") else [],
+            "recipient_phones": _store_manager_targets(stores_config, store_code),
         }
 
     # Rule 4: 区域报表

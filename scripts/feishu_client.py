@@ -80,6 +80,16 @@ def _save_recipients_cache():
         json.dump({"last_updated": time.strftime("%Y-%m-%d"), "entries": entries}, f, ensure_ascii=False, indent=2)
 
 
+def cached_open_id(phone: str) -> str:
+    """只读本地缓存，不请求飞书。"""
+    phone = phone.lstrip("+").replace("-", "").replace(" ", "")
+    if not phone:
+        return ""
+    if not _phone_to_open_id:
+        _load_recipients_cache()
+    return str(_phone_to_open_id.get(phone) or "")
+
+
 def resolve_phone_to_open_id(phone: str) -> str | None:
     """手机号 → open_id，优先查缓存，未命中则调 API。"""
     phone = phone.lstrip("+").replace("-", "").replace(" ", "")

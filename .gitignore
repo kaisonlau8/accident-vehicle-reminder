@@ -28,6 +28,7 @@ recordings/
 
 # Business data — contains real contact info, DO NOT commit
 list.xlsx
+list_backup_*.xlsx
 
 # macOS
 .DS_Store

@@ -30,17 +30,50 @@ def _log_followup(entry: dict):
     log_path = FOLLOWUP_DIR / "followup_log.jsonl"
     with open(log_path, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+def _targets(raw) -> list[dict]:
+    """收件人可以是手机号字符串，或 {name, phone, open_id}。"""
+    people = []
+    for item in raw or []:
+        if isinstance(item, str):
+            phone = item.strip()
+            if phone:
+                people.append({"name": "", "phone": phone, "open_id": ""})
+            continue
+        if not isinstance(item, dict):
+            continue
+        phone = str(item.get("phone") or "").strip()
+        open_id = str(item.get("open_id") or "").strip()
+        if phone or open_id:
+            people.append({
+                "name": str(item.get("name") or "").strip(),
+                "phone": phone,
+                "open_id": open_id,
+            })
+    return people
+
+
+def _resolve_target(target: dict) -> str | None:
+    open_id = str(target.get("open_id") or "").strip()
+    if open_id:
+        return open_id
+    phone = str(target.get("phone") or "").strip()
+    if not phone:
+        return None
+    return resolve_phone_to_open_id(phone)
+
+
 def dispatch_alerts(alerts: list[dict]) -> dict:
     """发送 Rule 1 的分级告警消息（卡片格式，按级别颜色区分）。"""
     total_sent = 0
     total_failed = 0
 
     for alert in alerts:
-        phones = alert.get("recipient_phones", [])
+        targets = _targets(alert.get("recipient_phones", []))
         card = build_alert_card(alert)
 
-        for phone in phones:
-            open_id = resolve_phone_to_open_id(phone)
+        for target in targets:
+            phone = target.get("phone") or ""
+            open_id = _resolve_target(target)
             if not open_id:
                 _log_followup({
                     "ts": time.strftime("%Y-%m-%dT%H:%M:%S+08:00"),
@@ -71,15 +104,16 @@ def dispatch_store_reports(store_reports: dict, excel_paths: dict[str, str] | No
     total_failed = 0
 
     for store_code, report in store_reports.items():
-        phones = report.get("recipient_phones", [])
+        targets = _targets(report.get("recipient_phones", []))
         if not skip_filter and not report.get("count_7d", 0) and not report.get("count_10d", 0) and not report.get("count_14d", 0):
             continue
 
         card = build_store_report_card(report["store_name"], report)
         excel_path = (excel_paths or {}).get(store_code)
 
-        for phone in phones:
-            open_id = resolve_phone_to_open_id(phone)
+        for target in targets:
+            phone = target.get("phone") or ""
+            open_id = _resolve_target(target)
             if not open_id:
                 total_failed += 1
                 continue
@@ -110,15 +144,16 @@ def dispatch_region_reports(region_reports: dict, excel_paths: dict[str, str] | 
     total_failed = 0
 
     for region_name, report in region_reports.items():
-        phones = report.get("recipient_phones", [])
+        targets = _targets(report.get("recipient_phones", []))
         if not skip_filter and not report.get("count_7d", 0) and not report.get("count_10d", 0) and not report.get("count_14d", 0):
             continue
 
         card = build_region_report_card(region_name, report)
         excel_path = (excel_paths or {}).get(region_name)
 
-        for phone in phones:
-            open_id = resolve_phone_to_open_id(phone)
+        for target in targets:
+            phone = target.get("phone") or ""
+            open_id = _resolve_target(target)
             if not open_id:
                 total_failed += 1
                 continue
@@ -145,14 +180,15 @@ def dispatch_region_reports(region_reports: dict, excel_paths: dict[str, str] | 
 
 def dispatch_national_report(national_data: dict, excel_path: str) -> dict:
     """发送 Rule 5 全国每日报表（card 摘要 + file Excel）。"""
-    phones = national_data.get("recipient_phones", [])
+    targets = _targets(national_data.get("recipient_phones", []))
     total_sent = 0
     total_failed = 0
 
     card = build_national_summary_card(national_data)
 
-    for phone in phones:
-        open_id = resolve_phone_to_open_id(phone)
+    for target in targets:
+        phone = target.get("phone") or ""
+        open_id = _resolve_target(target)
         if not open_id:
             total_failed += 1
             continue
