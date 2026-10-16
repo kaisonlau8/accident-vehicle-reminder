@@ -182,7 +182,7 @@
     .stat { padding: 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; text-align: center; }
     .stat .num { font-size: 24px; font-weight: 700; color: var(--blue); }
     .stat .label { font-size: 13px; color: var(--gray); }
-    .btn { display: inline-block; padding: 8px 16px; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; text-decoration: none; text-align: center; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; padding: 8px 16px; border: none; border-radius: 4px; font-family: inherit; font-size: 14px; line-height: 1.5; vertical-align: middle; cursor: pointer; text-decoration: none; text-align: center; }
     .btn-primary { background: var(--blue); color: #fff; }
     .btn-primary:hover { background: #2860e0; }
     .btn-warning { background: var(--orange); color: #fff; }
@@ -226,6 +226,21 @@
     .antd-btn-host { display: inline-block; vertical-align: middle; }
     .antd-inline-spin { display: inline-flex; align-items: center; vertical-align: middle; min-width: 14px; min-height: 14px; }
     #antd-feedback-holder { position: absolute; width: 0; height: 0; overflow: visible; }
+    .table-scroll { max-width: 100%; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .table-scroll th, .table-scroll td { white-space: nowrap; }
+    .data-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+    .browser-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+    .browser-actions label { flex: none; }
+    .browser-actions select { min-width: 0; max-width: 100%; }
+    @media (max-width: 768px) {
+      .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+      .stat { min-width: 0; padding: 12px 8px; }
+      .stat .num { font-size: 20px; overflow-wrap: anywhere; }
+      .card { min-width: 0; padding: 16px; }
+      .btn, .browser-actions select { min-height: 44px; }
+      .antd-btn-host .ant-btn { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; }
+      .browser-actions select { flex: 1 1 200px; }
+    }
   </style>
 </head>
 <body>

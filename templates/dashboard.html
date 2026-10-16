@@ -75,7 +75,7 @@
     {% endif %}
   </div>
 
-  <div style="display:flex; gap:8px; align-items:center; margin-bottom:12px;">
+  <div class="browser-actions">
     <label style="font-size:14px;">选择浏览器:</label>
     <select id="browser-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
       {% for b in available_browsers %}
@@ -117,10 +117,10 @@
     　今日退出：<strong id="session-monitor-count">0</strong>
     　最近变化：<span id="session-monitor-changed" style="color:var(--gray)">—</span>
   </p>
-  <table>
+  <div class="table-scroll"><table>
     <thead><tr><th>时间</th><th>状态</th><th>来源</th><th>页面</th><th>依据</th></tr></thead>
     <tbody id="session-monitor-events"><tr><td colspan="5" style="color:var(--gray)"><span id="session-monitor-spin" class="antd-inline-spin" data-inline-spin="small"></span> 加载中</td></tr></tbody>
-  </table>
+  </table></div>
 </div>
 
 {% if task_status.running %}
@@ -141,7 +141,7 @@
 {% if snap_info %}
 <div class="card">
   <h2>数据快照 <span class="badge badge-blue">{{ snap_info.file }}</span></h2>
-  <div class="grid" style="grid-template-columns: repeat(4, 1fr);">
+  <div class="grid">
     <div class="stat"><div class="num">{{ snap_info.total_records }}</div><div class="label">总记录数</div></div>
     <div class="stat"><div class="num">{{ snap_info.accident_records }}</div><div class="label">事故车数</div></div>
     <div class="stat"><div class="num">{{ snap_info.regions }}</div><div class="label">区域数</div></div>
@@ -160,7 +160,7 @@
 {% if recent_logs %}
 <div class="card">
   <h2>最近发送记录</h2>
-  <table>
+  <div class="table-scroll" role="region" aria-label="最近发送记录（可横向滚动）" tabindex="0"><table>
     <thead><tr><th>时间</th><th>规则</th><th>VIN/门店</th><th>手机号</th><th>状态</th></tr></thead>
     <tbody>
     {% for log in recent_logs %}
@@ -173,11 +173,11 @@
     </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </div>
 {% endif %}
 
-<div style="display:flex; gap:8px;">
+<div style="display:flex; flex-wrap:wrap; gap:8px;">
   <a href="/mode" class="btn btn-primary">切换模式</a>
   <a href="/trigger" class="btn btn-outline">手动触发任务</a>
   <a href="/data" class="btn btn-outline">查看数据</a>
