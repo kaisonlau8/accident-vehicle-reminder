@@ -19,7 +19,7 @@
 <div class="card" style="border-left: 4px solid var(--turquoise); background: #e8f8ee;">
   <h2>定时等候模式运行中</h2>
   <p style="margin-bottom:8px;">调度器已启动，等待 10:00 和 17:00 自动触发任务。</p>
-  <p style="color:var(--gray);" id="next-fire-info">下一次触发: 加载中...</p>
+  <p style="color:var(--gray);" id="next-fire-info">下一次触发: <span id="next-fire-spin" class="antd-inline-spin" data-inline-spin="small"></span></p>
   <p style="margin-bottom:12px;">
     爬取策略:
     {% if skip_crawl %}
@@ -28,25 +28,19 @@
       <span style="color:var(--turquoise); font-weight:600;">自动爬取 DMS</span>
     {% endif %}
   </p>
-  <form method="post" action="/mode">
+  <form method="post" action="/mode" data-antd-loading="正在停止定时等候…">
     <input type="hidden" name="action" value="stop">
     <button type="submit" class="btn btn-danger">停止定时等候</button>
   </form>
 </div>
 
-<script>
-setInterval(function() {
-  fetch('/api/status').then(r => r.json()).then(d => {
-    document.getElementById('next-fire-info').textContent = '下一次触发: ' + (d.next_fire || '计算中...');
-  });
-}, 5000);
-</script>
+
 {% endif %}
 
 <div class="card" style="border-left: 4px solid var(--blue);">
   <h2>定时等候模式</h2>
   <p style="color:var(--gray); margin-bottom:12px;">启动后台调度器，等到 10:00 自动执行告警+门店/区域报表，17:00 自动执行全报表。不会立即发送，按时间自动触发，常驻运行。</p>
-  <form method="post" action="/mode">
+  <form method="post" action="/mode" data-antd-loading="正在启动定时等候…">
     <input type="hidden" name="action" value="scheduled">
     <div class="form-row">
       <div class="form-group">
@@ -62,7 +56,7 @@ setInterval(function() {
 <div class="card" style="border-left: 4px solid var(--yellow);">
   <h2>测试模式（立即执行）</h2>
   <p style="color:var(--gray); margin-bottom:12px;">所有消息（告警+报表+Excel）发给指定测试手机号，跑完 10:00+17:00 全部规则后退出。</p>
-  <form method="post" action="/mode">
+  <form method="post" action="/mode" data-antd-loading="正在执行测试…">
     <input type="hidden" name="action" value="test">
     <div class="form-row">
       <div class="form-group">
@@ -82,7 +76,7 @@ setInterval(function() {
 <div class="card" style="border-left: 4px solid var(--turquoise);">
   <h2>正式模式 — 10:00 任务（立即执行）</h2>
   <p style="color:var(--gray); margin-bottom:12px;">爬取+导入+超期告警+门店/区域报表，按规则通知对应收件人。</p>
-  <form method="post" action="/mode">
+  <form method="post" action="/mode" data-antd-loading="正在执行 10:00 任务…">
     <input type="hidden" name="action" value="morning">
     <div class="form-row">
       <div class="form-group">
@@ -101,7 +95,7 @@ setInterval(function() {
   <p style="color:var(--gray); margin-bottom:6px;">30天内事故工单7天完工率 = 7天内完工事故车辆数 / 全部事故工单数 * 100%</p>
   <p style="color:var(--gray); margin-bottom:6px;">30天内事故工单10天完工率 = 10天内完工事故车辆数 / 全部事故工单数 * 100%</p>
   <p style="color:var(--gray); margin-bottom:12px;">工单里不包含作废。</p>
-  <form method="post" action="/mode">
+  <form method="post" action="/mode" data-antd-loading="正在执行 17:00 报表…">
     <input type="hidden" name="action" value="evening">
     <div class="form-row">
       <div class="form-group">
@@ -118,10 +112,43 @@ setInterval(function() {
 <div class="card" style="border-left: 4px solid var(--gray);">
   <h2>重置模式</h2>
   <p style="color:var(--gray); margin-bottom:12px;">将模式设为"未启动"，不中断正在执行的后台任务。</p>
-  <form method="post" action="/mode">
+  <form method="post" action="/mode" data-antd-loading="正在重置…">
     <input type="hidden" name="action" value="stop">
     <button type="submit" class="btn btn-outline">重置为未启动</button>
   </form>
 </div>
 {% endif %}
 {% endblock %}
+{% block scripts %}
+{% if mode == 'scheduled' %}
+<script>
+var nextFireErrorShown = false;
+function refreshNextFire() {
+  fetch('/api/status').then(r => r.json()).then(d => {
+    var spinEl = document.getElementById('next-fire-spin');
+    if (spinEl && spinEl._antdSpinRoot) {
+      spinEl._antdSpinRoot.unmount();
+      spinEl._antdSpinRoot = null;
+    }
+    var info = document.getElementById('next-fire-info');
+    if (info) info.textContent = '下一次触发: ' + (d.next_fire || '计算中...');
+  }).catch(function () {
+    var spinEl = document.getElementById('next-fire-spin');
+    if (spinEl && spinEl._antdSpinRoot) {
+      spinEl._antdSpinRoot.unmount();
+      spinEl._antdSpinRoot = null;
+    }
+    var info = document.getElementById('next-fire-info');
+    if (info) info.textContent = '下一次触发: 状态获取失败';
+    if (!nextFireErrorShown && window.AntdFeedback) {
+      nextFireErrorShown = true;
+      AntdFeedback.message.error('定时状态加载失败');
+    }
+  });
+}
+refreshNextFire();
+setInterval(refreshNextFire, 5000);
+</script>
+{% endif %}
+{% endblock %}
+

@@ -78,6 +78,9 @@
     footer { text-align: center; padding: 16px; color: var(--gray); font-size: 13px; }
     .running { animation: pulse 1.5s ease-in-out infinite; }
     @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .5; } }
+    .antd-btn-host { display: inline-block; vertical-align: middle; }
+    .antd-inline-spin { display: inline-flex; align-items: center; vertical-align: middle; min-width: 14px; min-height: 14px; }
+    #antd-feedback-holder { position: absolute; width: 0; height: 0; overflow: visible; }
   </style>
 </head>
 <body>
@@ -108,5 +111,11 @@
     {% block content %}{% endblock %}
   </div>
   <footer>猛士科技 服务运营 — 事故车维修超期提醒系统</footer>
+  <script src="/static/vendor/react.production.min.js"></script>
+  <script src="/static/vendor/react-dom.production.min.js"></script>
+  <script src="/static/vendor/dayjs.min.js"></script>
+  <script src="/static/vendor/antd.min.js"></script>
+  <script src="/static/antd-feedback.js"></script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>
