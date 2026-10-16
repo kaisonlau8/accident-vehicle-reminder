@@ -66,8 +66,8 @@
     </div>
 
     <div style="display:flex; gap:8px; align-items:center;">
-      <button type="button" class="btn btn-danger" onclick="clearSelected()">清除选中项</button>
-      <button type="button" class="btn btn-danger" onclick="clearAll()">一键清除全部</button>
+      <button type="button" id="btn-clear-selected" class="btn btn-danger" onclick="clearSelected()">清除选中项</button>
+      <button type="button" id="btn-clear-all" class="btn btn-danger" onclick="clearAll()">一键清除全部</button>
       <span id="clear-result" style="color:var(--turquoise); font-size:14px;"></span>
     </div>
   </form>
@@ -76,17 +76,30 @@
 <div class="card">
   <h2>快捷操作</h2>
   <p style="color:var(--gray); margin-bottom:12px;">仅清除测试相关数据，保留爬取的 Excel 和浏览器会话。</p>
-  <button type="button" class="btn btn-warning" onclick="clearTestData()">仅清除测试数据（告警历史+发送日志+收件人缓存+数据快照+报表）</button>
+  <button type="button" id="btn-clear-test" class="btn btn-primary" onclick="clearTestData()">仅清除测试数据（告警历史+发送日志+收件人缓存+数据快照+报表）</button>
 </div>
 
+{% endblock %}
+{% block scripts %}
 <script>
 function getSelected() {
   return Array.from(document.querySelectorAll('input[name=targets]:checked')).map(cb => cb.value);
 }
 
+function showCleared(data) {
+  var cleared = (data && data.cleared) || [];
+  var text = cleared.length ? ('已清除: ' + cleared.join(', ')) : '所选项目中没有可清除的文件';
+  var result = document.getElementById('clear-result');
+  if (result) result.textContent = text;
+  if (window.AntdFeedback) {
+    AntdFeedback.notify({ type: 'success', message: '清除完成', description: text });
+  }
+}
+
 function doClear(targets) {
   if (targets.length === 0) {
-    alert('请至少选择一项要清除的数据');
+    if (window.AntdFeedback) AntdFeedback.message.warning('请至少选择一项要清除的数据');
+    else alert('请至少选择一项要清除的数据');
     return;
   }
   if (!confirm('确认清除？此操作不可恢复！')) return;
@@ -95,9 +108,7 @@ function doClear(targets) {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({targets: targets})
-  }).then(r => r.json()).then(d => {
-    document.getElementById('clear-result').textContent = '已清除: ' + d.cleared.join(', ');
-  });
+  }).then(r => r.json()).then(showCleared);
 }
 
 function clearSelected() { doClear(getSelected()); }
@@ -114,5 +125,43 @@ function clearTestData() {
   });
   doClear(testTargets);
 }
+
+function upgradeClearButton(id, pickTargets) {
+  var button = document.getElementById(id);
+  if (!button || !window.AntdFeedback) return;
+  var api = AntdFeedback.mountButton(button, function () {
+    var targets = pickTargets();
+    if (!targets.length) {
+      AntdFeedback.message.warning('请至少选择一项要清除的数据');
+      return;
+    }
+    AntdFeedback.confirm({
+      title: '请确认',
+      content: '确认清除？此操作不可恢复！',
+      danger: true,
+      onOk: function () {
+        AntdFeedback.runAction(api, function () {
+          return AntdFeedback.postJson('/api/clear-cache', { targets: targets }).then(function (data) {
+            showCleared(data);
+            return data;
+          });
+        }, { loading: '正在清除…', success: '' });
+      },
+    });
+  });
+}
+
+upgradeClearButton('btn-clear-selected', getSelected);
+upgradeClearButton('btn-clear-all', function () {
+  document.querySelectorAll('input[name=targets]').forEach(function (cb) { cb.checked = true; });
+  return getSelected();
+});
+upgradeClearButton('btn-clear-test', function () {
+  var testTargets = ['alert_history', 'followup_log', 'recipients_cache', 'repair_orders', 'reports', 'run_manifest'];
+  document.querySelectorAll('input[name=targets]').forEach(function (cb) {
+    cb.checked = testTargets.indexOf(cb.value) !== -1;
+  });
+  return testTargets;
+});
 </script>
 {% endblock %}

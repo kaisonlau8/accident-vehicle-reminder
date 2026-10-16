@@ -21,7 +21,7 @@
     {% if sync_state.backup %}（备份 {{ sync_state.backup }}）{% endif %}
   </p>
   {% endif %}
-  <form method="post" action="/contacts/sync-bitable">
+  <form method="post" action="/contacts/sync-bitable" data-antd-loading="正在从飞书同步联系人…">
     <button type="submit" class="btn btn-primary">立即同步</button>
   </form>
 </div>
@@ -50,7 +50,7 @@
 <div class="card">
   <h2>全国收件人</h2>
   <p style="color:var(--gray); margin-bottom:12px;">区域报表和全国报表会额外通知这里的人。填写姓名和飞书手机号，解析失败会标出。</p>
-  <form method="post" action="/contacts/national/add" style="margin-bottom:16px;">
+  <form method="post" action="/contacts/national/add" data-antd-loading="正在保存收件人…" style="margin-bottom:16px;">
     <div class="form-row">
       <div class="form-group">
         <label>名称/键</label>
@@ -74,7 +74,7 @@
       <td>{{ item.phone }}</td>
       <td>{% if item.resolved %}已解析{% else %}<span style="color:var(--red);">未解析</span>{% endif %}</td>
       <td>
-        <form method="post" action="/contacts/national/delete" onsubmit="return confirm('确认删除全国收件人：{{ item.key }}？');">
+        <form method="post" action="/contacts/national/delete" data-antd-loading="正在删除…" data-antd-confirm="确认删除全国收件人：{{ item.key | e }}？" onsubmit="return confirm('确认删除全国收件人：{{ item.key | e }}？');">
           <input type="hidden" name="key" value="{{ item.key }}">
           <button type="submit" class="btn btn-danger btn-sm">删除</button>
         </form>
@@ -86,4 +86,17 @@
     </tbody>
   </table>
 </div>
+{% endblock %}
+{% block scripts %}
+{% if sync_message %}
+<script>
+if (window.AntdFeedback) {
+  AntdFeedback.notify({
+    type: {{ ('success' if sync_ok else 'error') | tojson }},
+    message: {{ ('同步完成' if sync_ok else '同步失败') | tojson }},
+    description: {{ sync_message | tojson }},
+  });
+}
+</script>
+{% endif %}
 {% endblock %}

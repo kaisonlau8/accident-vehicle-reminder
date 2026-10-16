@@ -3,7 +3,7 @@
 {% block content %}
 <h2 style="font-size:20px; margin-bottom:16px;">编辑 Rule {{ rule_id }}</h2>
 
-<form method="post" action="/rules/edit/{{ rule_id }}">
+<form method="post" action="/rules/edit/{{ rule_id }}" data-antd-loading="正在保存规则…">
 <div class="card">
   <div class="form-group">
     <label>规则名称</label>
