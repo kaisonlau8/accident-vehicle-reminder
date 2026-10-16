@@ -10,7 +10,7 @@
 </div>
 {% else %}
 
-<div class="grid" style="grid-template-columns: repeat(5, 1fr);">
+<div class="grid data-stats">
   <div class="stat"><div class="num">{{ snap_info.total }}</div><div class="label">总记录</div></div>
   <div class="stat"><div class="num">{{ snap_info.active }}</div><div class="label">在修事故车</div></div>
   <div class="stat"><div class="num">{{ snap_info.overdue }}</div><div class="label">≥7天超期</div></div>
@@ -21,7 +21,7 @@
 <div class="card">
   <h2>超期车辆列表（按天数排序）</h2>
   <p style="color:var(--gray); margin-bottom:8px;">数据日期: {{ snap_info.date }}</p>
-  <table>
+  <div class="table-scroll" role="region" aria-label="超期车辆列表（可横向滚动）" tabindex="0"><table>
     <thead>
       <tr>
         <th>级别</th>
@@ -67,7 +67,7 @@
     </tr>
     {% endfor %}
     </tbody>
-  </table>
+  </table></div>
 </div>
 {% endif %}
 {% endblock %}
