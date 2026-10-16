@@ -5,7 +5,7 @@
 
 {% if task_status.running %}
 <div class="card" style="border-left: 4px solid var(--orange);">
-  <h2>正在执行: {{ task_status.task }} <span class="badge badge-orange running">运行中</span></h2>
+  <h2>正在执行: {{ task_status.task }} <span class="antd-inline-spin" data-inline-spin="small"></span></h2>
   <p style="color:var(--gray);">开始时间: {{ task_status.started_at }}</p>
   <div class="log-box" id="log-output">{{ task_status.log_lines | join('\n') }}</div>
 </div>
@@ -15,6 +15,9 @@ setInterval(function() {
   fetch('/api/status').then(r => r.json()).then(d => {
     if (d.task_running) {
       document.getElementById('log-output').textContent = d.task_log_tail.join('\n');
+    } else if (window.AntdFeedback) {
+      AntdFeedback.showPageSpin('任务已结束，正在刷新…');
+      location.reload();
     } else {
       location.reload();
     }
@@ -34,7 +37,12 @@ setInterval(function() {
 <div class="card" style="border-left: 4px solid var(--blue);">
   <h2>爬取 DMS 数据</h2>
   <p style="color:var(--gray); margin-bottom:12px;">启动浏览器爬取维修工单，然后自动导入生成 JSON 快照。需要浏览器会话在线。</p>
-  <button onclick="fetch('/api/crawl',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.started)location.reload();})" class="btn btn-primary">
+  <button type="button" class="btn btn-primary"
+    data-antd-post="/api/crawl"
+    data-antd-loading="正在启动爬取…"
+    data-antd-success="爬取已开始"
+    data-antd-reload="1"
+    onclick="fetch('/api/crawl',{method:'POST'}).then(r=>r.json()).then(d=>{if(d.started)location.reload();})">
     爬取数据
   </button>
 </div>
@@ -52,7 +60,13 @@ setInterval(function() {
       <td>{{ f.size_kb }} KB</td>
       <td>{{ f.modified }}</td>
       <td>
-        <button onclick="fetch('/api/import-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:'{{ f.name }}'})}).then(r=>r.json()).then(d=>{if(d.started)location.reload();})" class="btn btn-success btn-sm">导入</button>
+        <button type="button" class="btn btn-primary btn-sm"
+          data-antd-post="/api/import-xlsx"
+          data-antd-filename="{{ f.name | e }}"
+          data-antd-loading="正在导入…"
+          data-antd-success="导入已开始"
+          data-antd-reload="1"
+          onclick="fetch('/api/import-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:{{ f.name | tojson | e }}})}).then(r=>r.json()).then(d=>{if(d.started)location.reload();})">导入</button>
       </td>
     </tr>
     {% endfor %}
@@ -73,7 +87,13 @@ setInterval(function() {
       <label class="checkbox"><input type="checkbox" id="skip-crawl-test"> 跳过爬取</label>
     </div>
   </div>
-  <button onclick="runTest()" class="btn btn-warning">执行测试</button>
+  <button type="button" class="btn btn-primary"
+    data-antd-post="/api/run-test"
+    data-antd-body="buildRunTestBody"
+    data-antd-loading="正在执行测试…"
+    data-antd-success="测试已开始"
+    data-antd-reload="1"
+    onclick="runTest()">执行测试</button>
 </div>
 
 <div class="card" style="border-left: 4px solid var(--turquoise);">
@@ -81,8 +101,20 @@ setInterval(function() {
   <p style="color:var(--gray); margin-bottom:12px;">按规则通知对应收件人，不替换手机号。</p>
   <div style="display:flex; gap:8px; align-items:center;">
     <label class="checkbox"><input type="checkbox" id="skip-crawl-formal"> 跳过爬取</label>
-    <button onclick="runMorning()" class="btn btn-success">10:00 告警+报表</button>
-    <button onclick="runEvening()" class="btn btn-success">17:00 全报表</button>
+    <button type="button" class="btn btn-primary"
+      data-antd-post="/api/run-morning"
+      data-antd-body="buildFormalBody"
+      data-antd-loading="正在执行 10:00 任务…"
+      data-antd-success="10:00 任务已开始"
+      data-antd-reload="1"
+      onclick="runMorning()">10:00 告警+报表</button>
+    <button type="button" class="btn btn-primary"
+      data-antd-post="/api/run-evening"
+      data-antd-body="buildFormalBody"
+      data-antd-loading="正在执行 17:00 报表…"
+      data-antd-success="17:00 报表已开始"
+      data-antd-reload="1"
+      onclick="runEvening()">17:00 全报表</button>
   </div>
   <p style="color:var(--gray); margin:12px 0 6px;">17:00 全国报表 / KPI 口径：</p>
   <p style="color:var(--gray); margin-bottom:6px;">30天内事故工单7天完工率 = 7天内完工事故车辆数 / 全部事故工单数 * 100%</p>
@@ -91,25 +123,34 @@ setInterval(function() {
 </div>
 
 <script>
+function buildRunTestBody() {
+  return {
+    test_phone: document.getElementById('test-phone').value,
+    skip_crawl: document.getElementById('skip-crawl-test').checked
+  };
+}
+function buildFormalBody() {
+  return { skip_crawl: document.getElementById('skip-crawl-formal').checked };
+}
 function runTest() {
   fetch('/api/run-test', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({test_phone: document.getElementById('test-phone').value, skip_crawl: document.getElementById('skip-crawl-test').checked})
+    body: JSON.stringify(buildRunTestBody())
   }).then(r=>r.json()).then(d=>{if(d.started)location.reload();});
 }
 function runMorning() {
   fetch('/api/run-morning', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({skip_crawl: document.getElementById('skip-crawl-formal').checked})
+    body: JSON.stringify(buildFormalBody())
   }).then(r=>r.json()).then(d=>{if(d.started)location.reload();});
 }
 function runEvening() {
   fetch('/api/run-evening', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({skip_crawl: document.getElementById('skip-crawl-formal').checked})
+    body: JSON.stringify(buildFormalBody())
   }).then(r=>r.json()).then(d=>{if(d.started)location.reload();});
 }
 </script>

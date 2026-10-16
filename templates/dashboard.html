@@ -35,9 +35,9 @@
     <div class="label">累计提醒次数</div>
   </div>
   <div class="stat">
-    <div class="num {% if task_status.running %}running{% endif %}"
+    <div class="num"
          style="color:{% if task_status.running %}var(--orange){% else %}var(--turquoise){% endif %};">
-      {% if task_status.running %}执行中{% elif task_status.result %}已完成{% else %}空闲{% endif %}
+      {% if task_status.running %}<span class="antd-inline-spin" data-inline-spin="small"></span> 执行中{% elif task_status.result %}已完成{% else %}空闲{% endif %}
     </div>
     <div class="label">任务状态</div>
   </div>
@@ -86,9 +86,15 @@
       {% endif %}
       {% endfor %}
     </select>
-    <button onclick="launchBrowser()" class="btn btn-primary btn-sm">启动登录</button>
+    <button type="button" id="btn-launch-browser" class="btn btn-primary btn-sm" onclick="launchBrowser()">启动登录</button>
     {% if browser %}
-    <button onclick="disconnectBrowser()" class="btn btn-outline btn-sm">断开连接</button>
+    <button type="button" id="btn-disconnect-browser" class="btn btn-outline btn-sm"
+      data-antd-post="/api/browser/disconnect"
+      data-antd-confirm="确认断开浏览器连接？需要重新启动登录才能爬取数据。"
+      data-antd-loading="正在断开…"
+      data-antd-success="已断开"
+      data-antd-reload="1"
+      onclick="disconnectBrowser()">断开连接</button>
     {% endif %}
   </div>
 
@@ -113,7 +119,7 @@
   </p>
   <table>
     <thead><tr><th>时间</th><th>状态</th><th>来源</th><th>页面</th><th>依据</th></tr></thead>
-    <tbody id="session-monitor-events"><tr><td colspan="5" style="color:var(--gray)">加载中…</td></tr></tbody>
+    <tbody id="session-monitor-events"><tr><td colspan="5" style="color:var(--gray)"><span id="session-monitor-spin" class="antd-inline-spin" data-inline-spin="small"></span> 加载中</td></tr></tbody>
   </table>
 </div>
 
@@ -130,6 +136,54 @@
 
 <div id="scheduler-status-card"></div>
 
+
+
+{% if snap_info %}
+<div class="card">
+  <h2>数据快照 <span class="badge badge-blue">{{ snap_info.file }}</span></h2>
+  <div class="grid" style="grid-template-columns: repeat(4, 1fr);">
+    <div class="stat"><div class="num">{{ snap_info.total_records }}</div><div class="label">总记录数</div></div>
+    <div class="stat"><div class="num">{{ snap_info.accident_records }}</div><div class="label">事故车数</div></div>
+    <div class="stat"><div class="num">{{ snap_info.regions }}</div><div class="label">区域数</div></div>
+    <div class="stat"><div class="num">{{ snap_info.stores }}</div><div class="label">门店数</div></div>
+  </div>
+</div>
+{% endif %}
+
+<div class="card" style="border-left: 4px solid var(--turquoise);">
+  <h2>全国报表 / KPI 口径</h2>
+  <p style="color:var(--gray); margin-bottom:8px;">30天内事故工单7天完工率 = 7天内完工事故车辆数 / 全部事故工单数 * 100%</p>
+  <p style="color:var(--gray); margin-bottom:8px;">30天内事故工单10天完工率 = 10天内完工事故车辆数 / 全部事故工单数 * 100%</p>
+  <p style="color:var(--gray); margin-bottom:0;">工单里不包含作废。</p>
+</div>
+
+{% if recent_logs %}
+<div class="card">
+  <h2>最近发送记录</h2>
+  <table>
+    <thead><tr><th>时间</th><th>规则</th><th>VIN/门店</th><th>手机号</th><th>状态</th></tr></thead>
+    <tbody>
+    {% for log in recent_logs %}
+    <tr>
+      <td>{{ log.ts }}</td>
+      <td>Rule {{ log.rule }}</td>
+      <td>{{ log.get('vin', log.get('store_code', log.get('region', ''))) }}</td>
+      <td>{{ log.phone }}</td>
+      <td><span class="badge {% if log.status == 'sent' %}badge-green{% else %}badge-red{% endif %}">{{ log.status }}</span></td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div style="display:flex; gap:8px;">
+  <a href="/mode" class="btn btn-primary">切换模式</a>
+  <a href="/trigger" class="btn btn-outline">手动触发任务</a>
+  <a href="/data" class="btn btn-outline">查看数据</a>
+</div>
+{% endblock %}
+{% block scripts %}
 <script>
 let keepaliveNextRefreshEpoch = {{ keepalive_info.next_refresh_at_epoch or 0 }};
 let keepaliveRunning = {{ 'true' if keepalive_info.running else 'false' }};
@@ -168,11 +222,20 @@ function renderKeepaliveStatus() {
   detailEl.textContent = '下次刷新 ' + secondsLeft + ' 秒';
 }
 
+function clearMonitorSpin() {
+  var spinEl = document.getElementById('session-monitor-spin');
+  if (spinEl && spinEl._antdSpinRoot) {
+    spinEl._antdSpinRoot.unmount();
+    spinEl._antdSpinRoot = null;
+  }
+}
+
 function renderSessionMonitor(m) {
   var statusEl = document.getElementById('session-monitor-status');
   var countEl = document.getElementById('session-monitor-count');
   var changedEl = document.getElementById('session-monitor-changed');
   var table = document.getElementById('session-monitor-events');
+  clearMonitorSpin();
   if (!statusEl || !m) return;
   var labels = {logged_in:'已登录', logged_out:'退出登录', missing:'无标签', offline:'浏览器离线', other:'其他'};
   var status = (m.current && m.current.status) || 'other';
@@ -190,8 +253,9 @@ function renderSessionMonitor(m) {
   }
 }
 
+var statusErrorShown = false;
 function refreshDashboardStatus() {
-  fetch('/api/status').then(r => r.json()).then(d => {
+  return fetch('/api/status').then(r => r.json()).then(d => {
     keepaliveRunning = !!(d.keepalive_info && d.keepalive_info.running);
     keepaliveNextRefreshEpoch = d.keepalive_info ? (d.keepalive_info.next_refresh_at_epoch || 0) : 0;
     keepaliveNeedLogin = !!(d.keepalive_info && d.keepalive_info.need_login);
@@ -243,6 +307,14 @@ function refreshDashboardStatus() {
     } else if (card) {
       card.innerHTML = '';
     }
+  }).catch(function () {
+    clearMonitorSpin();
+    var table = document.getElementById('session-monitor-events');
+    if (table) table.innerHTML = '<tr><td colspan="5" style="color:var(--gray)">状态加载失败</td></tr>';
+    if (!statusErrorShown && window.AntdFeedback) {
+      statusErrorShown = true;
+      AntdFeedback.message.error('系统状态加载失败');
+    }
   });
 }
 
@@ -252,7 +324,7 @@ refreshDashboardStatus();
 setInterval(renderKeepaliveStatus, 1000);
 setInterval(refreshDashboardStatus, 10000);
 
-// 启动浏览器
+// 启动浏览器。Ant Design 可用时换成带 loading 的 Button；否则保留这段 alert 回退。
 function launchBrowser() {
   var browser = document.getElementById('browser-select').value;
   fetch('/api/browser/launch', {
@@ -272,57 +344,35 @@ function launchBrowser() {
   });
 }
 
-// 断开浏览器
 function disconnectBrowser() {
   if (!confirm('确认断开浏览器连接？需要重新启动登录才能爬取数据。')) return;
   fetch('/api/browser/disconnect', {method: 'POST'}).then(r => r.json()).then(d => {
     location.reload();
   });
 }
+
+(function () {
+  var button = document.getElementById('btn-launch-browser');
+  if (!button || !window.AntdFeedback) return;
+  var api = AntdFeedback.mountButton(button, function () {
+    var browser = document.getElementById('browser-select').value;
+    AntdFeedback.runAction(api, function () {
+      return AntdFeedback.postJson('/api/browser/launch', { browser: browser }).then(function (data) {
+        if (!data.launched) throw new Error(data.error || '启动失败');
+        var lines = [];
+        if (data.message) lines.push(data.message);
+        if (data.browser) lines.push('浏览器：' + data.browser);
+        if (data.pid) lines.push('PID：' + data.pid);
+        if (data.port) lines.push('端口：' + data.port);
+        AntdFeedback.notify({
+          type: 'success',
+          message: data.reused ? '已连接现有浏览器' : '浏览器已启动',
+          description: lines.join('\n'),
+        });
+        return data;
+      });
+    }, { loading: '正在启动浏览器…', success: '', reload: true, reloadDelay: 1000 });
+  });
+})();
 </script>
-
-{% if snap_info %}
-<div class="card">
-  <h2>数据快照 <span class="badge badge-blue">{{ snap_info.file }}</span></h2>
-  <div class="grid" style="grid-template-columns: repeat(4, 1fr);">
-    <div class="stat"><div class="num">{{ snap_info.total_records }}</div><div class="label">总记录数</div></div>
-    <div class="stat"><div class="num">{{ snap_info.accident_records }}</div><div class="label">事故车数</div></div>
-    <div class="stat"><div class="num">{{ snap_info.regions }}</div><div class="label">区域数</div></div>
-    <div class="stat"><div class="num">{{ snap_info.stores }}</div><div class="label">门店数</div></div>
-  </div>
-</div>
-{% endif %}
-
-<div class="card" style="border-left: 4px solid var(--turquoise);">
-  <h2>全国报表 / KPI 口径</h2>
-  <p style="color:var(--gray); margin-bottom:8px;">30天内事故工单7天完工率 = 7天内完工事故车辆数 / 全部事故工单数 * 100%</p>
-  <p style="color:var(--gray); margin-bottom:8px;">30天内事故工单10天完工率 = 10天内完工事故车辆数 / 全部事故工单数 * 100%</p>
-  <p style="color:var(--gray); margin-bottom:0;">工单里不包含作废。</p>
-</div>
-
-{% if recent_logs %}
-<div class="card">
-  <h2>最近发送记录</h2>
-  <table>
-    <thead><tr><th>时间</th><th>规则</th><th>VIN/门店</th><th>手机号</th><th>状态</th></tr></thead>
-    <tbody>
-    {% for log in recent_logs %}
-    <tr>
-      <td>{{ log.ts }}</td>
-      <td>Rule {{ log.rule }}</td>
-      <td>{{ log.get('vin', log.get('store_code', log.get('region', ''))) }}</td>
-      <td>{{ log.phone }}</td>
-      <td><span class="badge {% if log.status == 'sent' %}badge-green{% else %}badge-red{% endif %}">{{ log.status }}</span></td>
-    </tr>
-    {% endfor %}
-    </tbody>
-  </table>
-</div>
-{% endif %}
-
-<div style="display:flex; gap:8px;">
-  <a href="/mode" class="btn btn-primary">切换模式</a>
-  <a href="/trigger" class="btn btn-outline">手动触发任务</a>
-  <a href="/data" class="btn btn-outline">查看数据</a>
-</div>
 {% endblock %}
