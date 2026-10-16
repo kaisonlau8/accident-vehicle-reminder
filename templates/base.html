@@ -29,7 +29,145 @@
     .nav .brand-logo { height: 28px; width: auto; display: block; }
     .nav a { color: var(--text); text-decoration: none; font-size: 14px; padding: 6px 12px; border-radius: 4px; }
     .nav a:hover { background: var(--bg); color: var(--blue); }
-    @media (max-width: 768px) { .nav { flex-wrap: wrap; } .nav .brand-logo { height: 22px; } }
+    .nav-links { display: flex; align-items: center; gap: 24px; }
+    .nav-mode { margin-left: auto; }
+    .nav-toggle,
+    .nav-overlay,
+    .nav-drawer-head { display: none; }
+    .nav-toggle {
+      height: 40px;
+      padding: 0 10px;
+      border: 1px solid #91caff;
+      border-radius: 6px;
+      background: #fff;
+      color: #1677ff;
+      cursor: pointer;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      flex: none;
+      font-size: 14px;
+      line-height: 1;
+      font-family: inherit;
+    }
+    .nav-toggle:hover { background: #e6f4ff; }
+    .nav-toggle:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+    .nav-toggle-bars {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      width: 18px;
+      height: 14px;
+    }
+    .nav-toggle-bar {
+      display: block;
+      height: 2px;
+      width: 100%;
+      border-radius: 1px;
+      background: #1677ff;
+      transform-origin: center;
+      transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1), opacity 0.2s linear;
+    }
+    .nav-toggle.is-open .nav-toggle-bar:nth-child(1) { transform: translateY(6px) rotate(45deg); }
+    .nav-toggle.is-open .nav-toggle-bar:nth-child(2) { opacity: 0; }
+    .nav-toggle.is-open .nav-toggle-bar:nth-child(3) { transform: translateY(-6px) rotate(-45deg); }
+    .nav-overlay {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      top: var(--nav-h, 56px);
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.45);
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s cubic-bezier(0.23, 1, 0.32, 1), visibility 0.3s linear;
+    }
+    .nav-overlay.is-open { opacity: 1; visibility: visible; }
+    .nav-drawer-head {
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 0 0 8px;
+      padding: 16px 16px 12px;
+      border-bottom: 1px solid #f0f0f0;
+      background: #fff;
+    }
+    .nav-drawer-title { color: #1677ff; font-size: 16px; font-weight: 600; }
+    .nav-drawer-close {
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #1677ff;
+      font-size: 14px;
+      font-family: inherit;
+      line-height: 1.4;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+    .nav-drawer-close:hover { background: #e6f4ff; }
+    .nav-drawer-close:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+    body.nav-open { overflow: hidden; }
+    @media (max-width: 768px) {
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 1002;
+        flex-wrap: wrap;
+        gap: 8px 8px;
+        padding: 10px 12px 8px;
+        background: #fff;
+      }
+      .nav h1 { flex: 1 1 auto; min-width: 0; font-size: 15px; gap: 8px; }
+      .nav .brand-logo { height: 22px; }
+      .nav-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .nav-toggle { order: 2; }
+      .nav-mode { order: 3; flex: 1 0 100%; margin-left: 0; font-size: 12px; white-space: nowrap; }
+      .nav-toggle,
+      .nav-overlay,
+      .nav-drawer-head { display: flex; }
+      .nav-links {
+        position: fixed;
+        z-index: 1001;
+        top: var(--nav-h, 56px);
+        right: 0;
+        bottom: 0;
+        width: min(280px, 86vw);
+        margin: 0;
+        padding: 0 0 calc(16px + env(safe-area-inset-bottom));
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+        background: #fff;
+        box-shadow: -6px 0 16px rgba(0, 0, 0, 0.08);
+        transform: translateX(100%);
+        visibility: hidden;
+        pointer-events: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        transition: transform 0.3s cubic-bezier(0.23, 1, 0.32, 1), visibility 0.3s linear;
+      }
+      .nav-links.is-open {
+        transform: translateX(0);
+        visibility: visible;
+        pointer-events: auto;
+      }
+      .nav-links.is-instant,
+      .nav-overlay.is-instant { transition: none; }
+      .nav-links a {
+        margin: 0 8px;
+        padding: 12px 16px;
+        border-radius: 6px;
+        font-size: 15px;
+      }
+      .nav-links a:hover,
+      .nav-links a:focus-visible { background: #e6f4ff; color: #1677ff; }
+    }
+    @media (max-width: 768px) and (prefers-reduced-motion: reduce) {
+      .nav-links,
+      .nav-overlay,
+      .nav-toggle-bar { transition: none; }
+    }
     .container { max-width: 960px; margin: 24px auto; padding: 0 16px; }
     .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 16px; }
     .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 12px; }
@@ -84,17 +222,23 @@
   </style>
 </head>
 <body>
-  <nav class="nav">
-    <h1><img class="brand-logo" src="/static/brand/logo-blue.png" srcset="/static/brand/logo-blue@2x.png 2x" alt="猛士" height="28">事故车提醒系统</h1>
-    <a href="/">仪表盘</a>
-    <a href="/mode">模式切换</a>
-    <a href="/trigger">手动触发</a>
-    <a href="/rules">规则管理</a>
-    <a href="/data">数据查看</a>
-    <a href="/reports">报表下载</a>
-    <a href="/contacts">门店联系人</a>
-    <a href="/clear-cache" style="color:var(--red);">清除缓存</a>
-    <span style="margin-left:auto;">
+  <nav class="nav" aria-label="主导航">
+    <h1><img class="brand-logo" src="/static/brand/logo-blue.png" srcset="/static/brand/logo-blue@2x.png 2x" alt="猛士" height="28"><span class="nav-title-text">事故车提醒系统</span></h1>
+    <div class="nav-links" id="nav-drawer" aria-label="导航菜单">
+      <div class="nav-drawer-head">
+        <span class="nav-drawer-title">导航菜单</span>
+        <button type="button" class="nav-drawer-close" id="nav-drawer-close">关闭</button>
+      </div>
+      <a href="/">仪表盘</a>
+      <a href="/mode">模式切换</a>
+      <a href="/trigger">手动触发</a>
+      <a href="/rules">规则管理</a>
+      <a href="/data">数据查看</a>
+      <a href="/reports">报表下载</a>
+      <a href="/contacts">门店联系人</a>
+      <a href="/clear-cache" style="color:var(--red);">清除缓存</a>
+    </div>
+    <span class="nav-mode">
       当前模式:
       {% if mode == 'test' %}
         <span class="mode-indicator mode-test">测试</span>
@@ -106,7 +250,35 @@
         <span class="mode-indicator mode-idle">未启动</span>
       {% endif %}
     </span>
+    <button type="button" class="nav-toggle" id="nav-toggle" aria-label="打开导航菜单" aria-expanded="false" aria-controls="nav-drawer">
+      <span class="nav-toggle-bars" aria-hidden="true">
+        <span class="nav-toggle-bar"></span>
+        <span class="nav-toggle-bar"></span>
+        <span class="nav-toggle-bar"></span>
+      </span>
+      <span class="nav-toggle-text">菜单</span>
+    </button>
   </nav>
+  <div class="nav-overlay" id="nav-overlay" aria-hidden="true"></div>
+  <noscript>
+    <style>
+      @media (max-width: 768px) {
+        .nav { flex-wrap: wrap !important; }
+        .nav-toggle, .nav-overlay, .nav-drawer-head { display: none !important; }
+        .nav-links {
+          position: static !important;
+          transform: none !important;
+          visibility: visible !important;
+          pointer-events: auto !important;
+          width: 100% !important;
+          flex-direction: row !important;
+          flex-wrap: wrap !important;
+          box-shadow: none !important;
+          overflow: visible !important;
+        }
+      }
+    </style>
+  </noscript>
   <div class="container">
     {% block content %}{% endblock %}
   </div>
@@ -116,6 +288,92 @@
   <script src="/static/vendor/dayjs.min.js"></script>
   <script src="/static/vendor/antd.min.js"></script>
   <script src="/static/antd-feedback.js"></script>
+  <script>
+    (function () {
+      var nav = document.querySelector(".nav");
+      var toggle = document.getElementById("nav-toggle");
+      var drawer = document.getElementById("nav-drawer");
+      var overlay = document.getElementById("nav-overlay");
+      var closeBtn = document.getElementById("nav-drawer-close");
+      if (!nav || !toggle || !drawer || !overlay) return;
+
+      var mobileQuery = window.matchMedia("(max-width: 768px)");
+
+      function syncNavHeight() {
+        document.documentElement.style.setProperty("--nav-h", nav.offsetHeight + "px");
+      }
+
+      function setOpen(open) {
+        if (!mobileQuery.matches) open = false;
+        drawer.classList.toggle("is-open", open);
+        overlay.classList.toggle("is-open", open);
+        toggle.classList.toggle("is-open", open);
+        document.body.classList.toggle("nav-open", open);
+        toggle.setAttribute("aria-expanded", open ? "true" : "false");
+        toggle.setAttribute("aria-label", open ? "关闭导航菜单" : "打开导航菜单");
+        if (mobileQuery.matches && !open) drawer.setAttribute("inert", "");
+        else drawer.removeAttribute("inert");
+        drawer.setAttribute("aria-hidden", mobileQuery.matches && !open ? "true" : "false");
+        if (open && closeBtn) closeBtn.focus();
+      }
+
+      toggle.addEventListener("click", function () {
+        setOpen(!drawer.classList.contains("is-open"));
+      });
+      overlay.addEventListener("click", function () {
+        setOpen(false);
+        toggle.focus();
+      });
+      if (closeBtn) {
+        closeBtn.addEventListener("click", function () {
+          setOpen(false);
+          toggle.focus();
+        });
+      }
+      drawer.querySelectorAll("a").forEach(function (link) {
+        link.addEventListener("click", function () {
+          setOpen(false);
+        });
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && drawer.classList.contains("is-open")) {
+          setOpen(false);
+          toggle.focus();
+        }
+      });
+
+      function suppressMotion() {
+        drawer.classList.add("is-instant");
+        overlay.classList.add("is-instant");
+        requestAnimationFrame(function () {
+          requestAnimationFrame(function () {
+            drawer.classList.remove("is-instant");
+            overlay.classList.remove("is-instant");
+          });
+        });
+      }
+
+      function onViewportChange() {
+        suppressMotion();
+        syncNavHeight();
+        if (!mobileQuery.matches) setOpen(false);
+        else if (!drawer.classList.contains("is-open")) {
+          drawer.setAttribute("inert", "");
+          drawer.setAttribute("aria-hidden", "true");
+        }
+      }
+
+      if (mobileQuery.addEventListener) mobileQuery.addEventListener("change", onViewportChange);
+      else if (mobileQuery.addListener) mobileQuery.addListener(onViewportChange);
+      window.addEventListener("resize", syncNavHeight);
+      window.addEventListener("load", syncNavHeight);
+      syncNavHeight();
+      if (mobileQuery.matches) {
+        drawer.setAttribute("inert", "");
+        drawer.setAttribute("aria-hidden", "true");
+      }
+    })();
+  </script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
