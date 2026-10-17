@@ -839,8 +839,8 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   .timeout-filters:not(.ds-filter-ready),
   [data-ds-filter]:not(.ds-filter-ready) {
     display: block !important;
-    height: 58.4px !important;
-    min-height: 58.4px !important;
+    height: 46px !important;
+    min-height: 46px !important;
     margin: 12px 0 !important;
     padding: 0 !important;
     overflow: hidden !important;
@@ -2496,9 +2496,12 @@ td:has(> a.ds-page-link):hover { background: #e6f4ff; }
 .ds-cell-action:focus-visible, .theater-row:focus-visible { outline: 2px solid #1677ff; outline-offset: -2px; }
 @media (max-width: 860px) {
   .ds-filter { border: 1px solid #f0f0f0; background: #fff; }
-  .ds-filter > .ds-collapse-toggle { display: flex; flex-wrap: wrap; }
+  .ds-filter > .ds-collapse-toggle { display: flex; flex-wrap: nowrap; }
   .ds-filter > .ds-collapse-panel { padding: 12px; }
-  .ds-filter-summary { flex: 1 1 130px; }
+  .ds-filter-summary {
+    flex: 1 1 0; min-width: 0; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
   .ds-close:not([hidden]), .ant-notification-notice-close:not([hidden]) {
     width: 40px !important; height: 40px !important; min-width: 40px !important; min-height: 40px !important;
   }
@@ -2521,4 +2524,17 @@ td:has(> a.ds-page-link):hover { background: #e6f4ff; }
   .ds-page-enter, .ds-stagger-item, .ds-skeleton, .ds-skeleton-block { animation: none !important; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
   .ds-subbar-back:active { background: transparent; }
+}
+
+/* 26.7 全局 reduced-motion 兜底：任何页面自有 transition/animation 也不得超过 0.01ms。
+   放在文件末尾，覆盖业务样式表中的 0.2s/0.3s 过渡与动画。 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    transition-duration: .01ms !important;
+    transition-delay: 0s !important;
+    animation-duration: .01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
 }
