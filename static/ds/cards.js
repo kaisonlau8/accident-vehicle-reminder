@@ -152,8 +152,9 @@
       var count = document.createElement('span'); count.className = filter ? 'ds-filter-summary' : 'ds-collapse-count';
       btn.appendChild(label); btn.appendChild(count); btn.appendChild(icon('down', 'ds-collapse-arrow'));
       btn.setAttribute('aria-controls', panel.id); box.appendChild(btn); box.appendChild(panel);
-      state = { panel: panel, btn: btn, count: count, open: false, filter: filter };
+      state = { panel: panel, btn: btn, count: count, open: false, filter: filter, ready: false, visualOpen: false, animating: false };
       states.set(box, state);
+      box.classList.add('ds-collapse-ready');
       btn.addEventListener('click', function () { state.open = !state.open; refresh(box); });
     }
     refresh(box);
@@ -172,10 +173,79 @@
     [].forEach.call(panel.querySelectorAll('.select-trigger'), function (el) { parts.push(el.textContent.trim()); });
     return parts.length ? parts.join(' · ') : '未筛选';
   }
-  function refresh(box) {
+  function reduced() {
+    return window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  function nowMobile() {
+    return window.innerWidth <= 860;
+  }
+  function clearPanelInline(panel) {
+    panel.style.height = ''; panel.style.opacity = ''; panel.style.overflow = '';
+  }
+  function cancelPanelAnims(panel) {
+    if (panel.getAnimations) panel.getAnimations().forEach(function (a) { a.cancel(); });
+  }
+  function setPanelOpen(s, open, instant) {
+    if (s.visualOpen === open && s.ready && !instant) return;
+    var panel = s.panel;
+    s.gen = (s.gen || 0) + 1;
+    var gen = s.gen;
+    if (s.animating || instant) { cancelPanelAnims(panel); s.animating = false; }
+    if (!s.ready || instant || reduced()) {
+      clearPanelInline(panel);
+      panel.hidden = !open; panel.inert = false;
+      s.visualOpen = open; s.ready = true; s.animating = false;
+      return;
+    }
+    if (open) {
+      panel.hidden = false; panel.inert = false;
+      clearPanelInline(panel);
+      var height = panel.scrollHeight;
+      if (!height) { s.visualOpen = true; return; }
+      panel.style.overflow = 'hidden';
+      panel.style.height = '0px'; panel.style.opacity = '0';
+      var anim = panel.animate(
+        [{ height: '0px', opacity: 0 }, { height: height + 'px', opacity: 1 }],
+        { duration: 250, easing: 'cubic-bezier(.23,1,.32,1)' }
+      );
+      s.animating = true;
+      anim.onfinish = function () {
+        if (gen !== s.gen) return;
+        clearPanelInline(panel); s.animating = false;
+      };
+      anim.oncancel = function () {
+        if (gen !== s.gen) return;
+        if (s.visualOpen) clearPanelInline(panel);
+        s.animating = false;
+      };
+    } else {
+      clearPanelInline(panel);
+      var from = panel.scrollHeight;
+      panel.style.overflow = 'hidden';
+      panel.inert = true;
+      var closeAnim = panel.animate(
+        [{ height: from + 'px', opacity: 1 }, { height: '0px', opacity: 0 }],
+        { duration: 200, easing: 'cubic-bezier(.23,1,.32,1)', fill: 'forwards' }
+      );
+      s.animating = true;
+      closeAnim.onfinish = function () {
+        if (gen !== s.gen) return;
+        panel.hidden = true; panel.inert = false;
+        clearPanelInline(panel);
+        closeAnim.cancel(); s.animating = false;
+      };
+      closeAnim.oncancel = function () {
+        if (gen !== s.gen) return;
+        s.animating = false;
+      };
+    }
+    s.visualOpen = open;
+  }
+  function refresh(box, instant) {
     var s = states.get(box); if (!s) return;
-    var open = s.filter && !mobile.matches ? true : s.open;
-    s.panel.hidden = !open; s.btn.setAttribute('aria-expanded', String(open));
+    var open = s.filter && !nowMobile() ? true : s.open;
+    setPanelOpen(s, open, !!instant);
+    s.btn.setAttribute('aria-expanded', String(open));
     if (s.filter) {
       if (!s.dirty || s.href !== location.href || s.panel.querySelector('[data-ds-filter-live]')) {
         s.applied = summary(s.panel); s.href = location.href; s.dirty = false;
@@ -197,9 +267,14 @@
   }
   function filters() {
     [].forEach.call(document.querySelectorAll('form.ant-filter-bar, .timeout-filters, [data-ds-filter]'), function (el) {
-      if (el.closest('details,.ds-collapse') || (el.closest('form') && el.closest('form').method.toLowerCase() !== 'get')) return;
+      if (el.closest('details,.ds-collapse') || (el.closest('form') && el.closest('form').method.toLowerCase() !== 'get') || (el.tagName === 'FORM' && el.method.toLowerCase() !== 'get')) {
+        el.classList.add('ds-filter-ready');
+        return;
+      }
       var box = document.createElement('div'); box.className = 'ds-collapse ds-filter';
-      el.parentNode.insertBefore(box, el); box.appendChild(el); collapse(box, true);
+      el.parentNode.insertBefore(box, el); box.appendChild(el);
+      el.classList.add('ds-filter-ready');
+      collapse(box, true);
     });
   }
   function nativeDetails(d) {
@@ -211,6 +286,40 @@
       d.dataset.dsToggleReady = '1';
     }
     if (!head.querySelector(':scope > .ds-collapse-arrow')) head.appendChild(icon('down', 'ds-collapse-arrow'));
+    if (!d.dataset.dsNativeMotion) {
+      d.dataset.dsNativeMotion = '1';
+      head.addEventListener('click', function (e) {
+        if (reduced()) return;
+        if (d.open) {
+          e.preventDefault();
+          var from = d.getBoundingClientRect().height;
+          var to = head.getBoundingClientRect().height;
+          d.style.overflow = 'hidden'; d.inert = true;
+          var anim = d.animate(
+            [{ height: from + 'px', opacity: 1 }, { height: to + 'px', opacity: 0 }],
+            { duration: 200, easing: 'cubic-bezier(.23,1,.32,1)', fill: 'forwards' }
+          );
+          anim.onfinish = function () {
+            d.open = false; d.inert = false;
+            d.style.overflow = ''; anim.cancel();
+            head.setAttribute('aria-expanded', 'false');
+          };
+        } else {
+          requestAnimationFrame(function () {
+            var start = head.getBoundingClientRect().height;
+            var end = d.scrollHeight;
+            d.style.overflow = 'hidden';
+            var openAnim = d.animate(
+              [{ height: start + 'px', opacity: 0 }, { height: end + 'px', opacity: 1 }],
+              { duration: 250, easing: 'cubic-bezier(.23,1,.32,1)' }
+            );
+            openAnim.onfinish = function () {
+              d.style.overflow = ''; openAnim.cancel();
+            };
+          });
+        }
+      });
+    }
     // 已有计数沿用；自动计数只用于有表格且标题没有计数的明细。
     if (d.querySelector('table') && !head.querySelector('.store-count,.ds-collapse-count') && !/\d/.test(head.textContent)) {
       var count = document.createElement('span'); count.className = 'ds-collapse-count';
@@ -255,29 +364,186 @@
       });
     });
   }
+  function headerEl() { return document.querySelector('.topbar, .ant-header, .nav'); }
+  function titleText(heading) {
+    var copy = heading.cloneNode(true);
+    [].forEach.call(copy.querySelectorAll('.ant-card-head-sub,.ant-tag,small,svg,.ant-spin'), function (n) { n.remove(); });
+    return (copy.textContent || '').replace(/\s+/g, ' ').trim() || document.title.split('·')[0].trim();
+  }
+  function sameOriginReferrer() {
+    try { return !!document.referrer && new URL(document.referrer).origin === location.origin; }
+    catch (e) { return false; }
+  }
+  function goBack(e, config) {
+    if (!e || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button > 0) return;
+    if (sameOriginReferrer() && history.length > 1) {
+      e.preventDefault();
+      history.back();
+      return;
+    }
+    var target = config.dataset.dsBack || '/';
+    if (e.currentTarget && e.currentTarget.tagName !== 'A') {
+      e.preventDefault();
+      location.href = target;
+    }
+  }
+  function syncHeaderHeight() {
+    var header = headerEl(); if (!header) return;
+    var h = Math.round(header.getBoundingClientRect().height);
+    if (h > 0) document.documentElement.style.setProperty('--ds-header-h', h + 'px');
+  }
+  function ensureSubbar(config, heading) {
+    var header = headerEl(); if (!header) return;
+    var bar = document.querySelector('.ds-subbar');
+    if (!bar) {
+      bar = document.createElement('div');
+      bar.className = 'ds-subbar';
+      header.parentNode.insertBefore(bar, header.nextSibling);
+    }
+    var label = config.dataset.dsBackLabel || '返回';
+    var title = titleText(heading);
+    var btn = bar.querySelector('.ds-subbar-back');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button'; btn.className = 'ds-subbar-back';
+      btn.appendChild(icon('left'));
+      btn.addEventListener('click', function (e) { goBack(e, config); });
+      bar.appendChild(btn);
+    }
+    btn.setAttribute('aria-label', '返回上级：' + label);
+    btn.title = '返回上级：' + label;
+    var text = bar.querySelector('.ds-subbar-title');
+    if (!text) { text = document.createElement('h1'); text.className = 'ds-subbar-title'; bar.appendChild(text); }
+    setText(text, title);
+    var page = config.closest('.container') || config.parentNode;
+    if (page && page.classList) page.classList.add('ds-subbar-page');
+    syncHeaderHeight();
+  }
+  function ensureBreadcrumb(config, heading) {
+    var host = heading.parentNode;
+    var crumb = config.querySelector('.ant-breadcrumb[data-ds-auto]');
+    var label = config.dataset.dsBackLabel || '返回';
+    var current = titleText(heading);
+    if (!crumb) {
+      crumb = document.createElement('nav');
+      crumb.className = 'ant-breadcrumb'; crumb.setAttribute('aria-label', '面包屑'); crumb.setAttribute('data-ds-auto', '1');
+      var a = document.createElement('a');
+      a.href = config.dataset.dsBack || '/';
+      a.addEventListener('click', function (e) { goBack(e, config); });
+      var sep = document.createElement('span'); sep.className = 'ant-breadcrumb-separator'; sep.setAttribute('aria-hidden', 'true'); sep.textContent = '/';
+      var cur = document.createElement('span'); cur.className = 'ant-breadcrumb-current'; cur.setAttribute('aria-current', 'page');
+      crumb.appendChild(a); crumb.appendChild(sep); crumb.appendChild(cur);
+    }
+    var link = crumb.querySelector('a');
+    if (link) { link.href = config.dataset.dsBack || '/'; setText(link, label); }
+    var now = crumb.querySelector('.ant-breadcrumb-current');
+    if (now) setText(now, current);
+    if (crumb.parentNode !== host) host.insertBefore(crumb, heading);
+  }
   function back() {
-    var config = document.querySelector('[data-ds-back]'); if (!config || config.querySelector('.ds-title-row')) return;
+    var config = document.querySelector('[data-ds-back]');
+    if (!config) return;
     var heading = config.querySelector('.ant-page-header-heading > h1, :scope > h1, :scope > h2');
     if (!heading) return;
-    var a = config.querySelector('a.ds-back') || [].find.call(config.querySelectorAll('.ant-page-header a'), function (link) { return /^返回/.test(link.textContent.trim()); });
-    if (!a) { a = document.createElement('a'); a.className = 'ds-back'; a.href = config.dataset.dsBack; a.appendChild(icon('arrow-left')); a.appendChild(document.createTextNode('返回')); }
-    a.classList.add('ds-back');
-    if (!a.querySelector('use[href="#i-arrow-left"]')) a.insertBefore(icon('arrow-left'), a.firstChild);
-    var row = document.createElement('div'); row.className = 'ds-title-row';
-    heading.parentNode.insertBefore(row, heading); row.appendChild(a); row.appendChild(heading);
+    ensureSubbar(config, heading);
+    if (!mobile.matches) ensureBreadcrumb(config, heading);
   }
+  function motion() {
+    if (reduced() || document.startViewTransition) return;
+    var main = document.querySelector('.ant-layout-content, main, .container');
+    if (!main || main.dataset.dsEntered) return;
+    main.dataset.dsEntered = '1';
+    main.classList.add('ds-page-enter');
+    main.addEventListener('animationend', function () { main.classList.remove('ds-page-enter'); }, { once: true });
+  }
+  function skeleton() {
+    [].forEach.call(document.querySelectorAll('[data-ds-skeleton]'), function (el) {
+      var text = (el.textContent || '').replace(/\s+/g, ' ').trim();
+      var busy = /加载中|正在加载|请稍候/.test(text) || (el.tagName === 'TBODY' && !el.querySelector('tr:not([data-ds-placeholder])') && el.closest('.ant-spin-nested-loading'));
+      el.classList.toggle('ds-skeleton', !!busy);
+      el.setAttribute('aria-busy', busy ? 'true' : 'false');
+    });
+  }
+  function stagger() {
+    if (reduced()) return;
+    var lists = document.querySelectorAll('tbody, .grid, .summary-cards, .stats-grid');
+    [].forEach.call(lists, function (box) {
+      if (box.dataset.dsStaggered) return;
+      var items = [].filter.call(box.children, function (el, i) {
+        if (i >= 20) return false;
+        if (el.tagName === 'TR' && el.cells.length === 1 && el.cells[0].colSpan > 1) return false;
+        return el.tagName === 'TR' || !/^(THEAD|TBODY|TFOOT)$/.test(el.tagName);
+      });
+      if (!items.length) return;
+      if (items.length < 2 && box.tagName === 'TBODY') { box.dataset.dsStaggered = '1'; return; }
+      items.forEach(function (el, i) {
+        el.style.setProperty('--ds-stagger-delay', (i * 20) + 'ms');
+        el.style.animationDelay = 'var(--ds-stagger-delay)';
+        el.classList.add('ds-stagger-item');
+        el.addEventListener('animationend', function () {
+          el.classList.remove('ds-stagger-item');
+          el.style.animationDelay = '';
+          el.style.removeProperty('--ds-stagger-delay');
+        }, { once: true });
+      });
+      box.dataset.dsStaggered = '1';
+    });
+  }
+  function refreshAll(instant) {
+    [].forEach.call(document.querySelectorAll('.ds-collapse'), function (box) {
+      if (states.get(box)) refresh(box, instant);
+    });
+    if (instant) {
+      [].forEach.call(document.querySelectorAll('details'), function (d) {
+        if (d.getAnimations && d.getAnimations().length) return;
+        d.style.overflow = '';
+        d.style.height = '';
+        if (d.open) d.inert = false;
+      });
+    }
+    syncHeaderHeight();
+  }
+  var resizeRaf = 0;
+  function onResize() {
+    syncHeaderHeight();
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(function () {
+      resizeRaf = 0;
+      refreshAll(true);
+    });
+  }
+  function scrollShadow() {
+    var header = headerEl(); if (!header || header.dataset.dsShadow) return;
+    header.dataset.dsShadow = '1';
+    var ticking = false;
+    function apply() {
+      ticking = false;
+      header.classList.toggle('ds-scrolled', window.scrollY > 4);
+    }
+    window.addEventListener('scroll', function () {
+      if (ticking) return; ticking = true; requestAnimationFrame(apply);
+    }, { passive: true });
+    window.addEventListener('resize', function () { syncHeaderHeight(); apply(); }, { passive: true });
+    apply();
+  }
+  var selfMutating = false;
   function scan() {
+    selfMutating = true;
     back();
     filters();
     [].forEach.call(document.querySelectorAll('.ds-collapse'), function (b) { collapse(b, b.classList.contains('ds-filter')); });
     longTables();
     [].forEach.call(document.querySelectorAll('details'), nativeDetails);
-    links(); closes(); cells();
+    links(); closes(); cells(); skeleton(); stagger();
+    requestAnimationFrame(function () { selfMutating = false; });
   }
   function schedule() { if (!timer) timer = setTimeout(function () { timer = null; scan(); }, 80); }
-  window.MheroInteraction = { scan: scan, icon: icon };
+  window.MheroInteraction = { scan: scan, icon: icon, skeleton: skeleton, goBack: goBack };
   function boot() {
-    scan(); new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true, characterData: true });
+    scan(); motion(); scrollShadow();
+    new MutationObserver(function () { if (!selfMutating) schedule(); }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    if (mobile.addEventListener) mobile.addEventListener('change', function () { refreshAll(true); schedule(); });
+    window.addEventListener('resize', onResize, { passive: true });
     function filterInput(e) {
       var box = e.target.closest && e.target.closest('.ds-filter');
       var s = box && states.get(box);
@@ -285,7 +551,6 @@
       schedule();
     }
     document.addEventListener('input', filterInput); document.addEventListener('change', filterInput);
-    mobile.addEventListener('change', function () { document.querySelectorAll('.ds-filter').forEach(refresh); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
