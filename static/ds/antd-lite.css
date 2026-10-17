@@ -1,0 +1,2270 @@
+/* ==========================================================================
+   antd-lite.css — 纯 CSS 复刻 Ant Design v5 视觉语言（无构建 / 无 CDN）
+   --------------------------------------------------------------------------
+   · 图标：只允许本地 SVG sprite（阿里 Ant Design Icons，MIT），
+     用法 <svg class="ai"><use href="#i-download"/></svg>；禁止 emoji / 文字符号做图标。
+   · 分区目录：
+       1  Design Tokens（:root CSS 变量，含旧系统变量别名）
+       2  Reset 与基础排版
+       3  图标 .ai
+       4  布局与导航：ant-layout / ant-header / ant-menu / ant-dropdown / 汉堡
+          （reportdb 顶栏历史 class .topbar/.menu/.mi/.dd 在此节与 ant-* 共享同一组规则）
+       5  ant-page-header
+       6  ant-card
+       7  ant-btn（default/primary/dashed/text/link/danger · sm/lg/icon · loading）
+       8  数据录入：ant-input / ant-select / ant-checkbox / ant-form-item / ant-filter-bar
+        9  ant-table（small / sticky-first / zebra / wrap 横向滚动 + 表头粘性
+           + 9.6 移动端卡片化 ant-table-cards，配 cards.js，<=768px）
+       10 ant-tag / ant-badge
+       11 ant-alert
+       12 ant-empty
+       13 ant-pagination
+       14 ant-collapse（details.ant-collapse 原生折叠）
+       15 ant-statistic / ant-descriptions
+       16 ant-tooltip-hint
+       17 ant-segmented
+       18 工具类
+       19 移动端全局适配（<=768px：44px 触控 / filter-bar 纵向堆叠 / actions 换行）
+       20 打印
+       21 兼容层：reportdb 旧模板 class（.card/.btn/.filters/.tw/.sticky1/... ）映射
+        22 ant-spin（区块加载；四点指示器，主色 #1677ff）
+        23 ant-message（顶部轻提示：success / error / info / warning / loading）
+        24 ant-progress / ant-upload-list（线形进度 + 上传列表）
+         25 ant-notification（右上角白卡片轻提示，z-index 1050）
+         26 统一交互（折叠 / 移动筛选 / 返回 / 关闭 / 跳转，见 INTERACTION.md）
+   · 移动端断点：导航/筛选 <=860px 折叠（与顶栏 JS 的 matchMedia 对齐）；
+     其余 <=768px（覆盖 360 / 390 / 414 宽），可点击控件最小高度 44px。
+   ========================================================================== */
+
+/* ==========================================================================
+   1. Design Tokens（Ant Design v5）
+   ========================================================================== */
+:root {
+  /* ---- 主色 / 语义色 ---- */
+  --ant-primary: #1677ff;            /* 主色 */
+  --ant-primary-hover: #4096ff;      /* 主色-悬浮 */
+  --ant-primary-active: #0958d9;     /* 主色-按下 */
+  --ant-primary-bg: #e6f4ff;         /* 主色弱底（选中态） */
+  --ant-success: #52c41a;  --ant-success-bg: #f6ffed;  --ant-success-border: #b7eb8f;
+  --ant-warning: #faad14;  --ant-warning-bg: #fffbe6;  --ant-warning-border: #ffe58f;
+  --ant-error: #ff4d4f;    --ant-error-bg: #fff2f0;    --ant-error-border: #ffccc7;
+  --ant-info: var(--ant-primary); --ant-info-bg: var(--ant-primary-bg);
+  /* 语义 tag/alert 的“深字”（与各自浅底、白底对比均 >=4.5） */
+  --ant-success-text: #237804;  --ant-warning-text: #613400;  --ant-error-text: #a8071a;
+
+  /* ---- 文本（antd v5 灰阶） ---- */
+  --ant-color-text: rgba(0, 0, 0, .88);          /* 主文本 */
+  --ant-color-text-secondary: rgba(0, 0, 0, .65); /* 次要 */
+  --ant-color-text-tertiary: rgba(0, 0, 0, .45);  /* 三级 / 辅助 */
+  --ant-color-text-quaternary: rgba(0, 0, 0, .25);/* 禁用 */
+
+  /* ---- 背景 / 边框 / 分割 ---- */
+  --ant-color-bg-layout: #f5f5f5;   /* 页面布局背景 */
+  --ant-color-bg-container: #fff;   /* 容器 / 卡片 */
+  --ant-color-bg-subtle: #fafafa;   /* 表头 / 斑马 / 悬停 */
+  --ant-color-split: rgba(5, 5, 5, .06);  /* 分割线 */
+  --ant-color-border: #d9d9d9;      /* 控件边框 */
+  --ant-color-border-strong: #8c8c8c;
+  --ant-table-header-bg: #fafafa;
+  --ant-table-stripe-bg: #fafafa;   /* 斑马行 */
+  --ant-table-row-hover: #fafafa;   /* 行悬停 */
+
+  /* ---- 品牌橙：仅用于 logo 图形 / 色条，禁止作白底文字 ---- */
+  --ant-brand: #ff8800;
+
+  /* ---- 字体 / 字号阶梯 ---- */
+  --ant-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+                     'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue',
+                     Helvetica, Arial, sans-serif;
+  --ant-font-size-base: 14px;   /* 页面正文 / 控件 */
+  --ant-font-size-sm: 12px;     /* 辅助（表注 / hint / badge） */
+  --ant-font-size-table: 13px;  /* 表格正文（本站信息密度较高） */
+  --ant-font-size-card-title: 16px;
+  --ant-font-size-page-title: 20px;
+  --ant-font-size-stat: 28px;   /* 仅统计大数字 */
+  --ant-line-height-base: 1.5714;
+
+  /* ---- 间距 ---- */
+  --ant-space-1: 4px;  --ant-space-2: 8px;  --ant-space-3: 12px;
+  --ant-space-4: 16px; --ant-space-5: 24px; --ant-space-6: 32px;
+
+  /* ---- 圆角 ---- */
+  --ant-radius-sm: 4px;   /* tag / 小控件 */
+  --ant-radius-md: 6px;   /* 按钮 / 输入 */
+  --ant-radius-lg: 8px;   /* 卡片 / 下拉 */
+  --ant-radius-pill: 999px;
+
+  /* ---- 阴影 ---- */
+  --ant-shadow-card: 0 1px 2px 0 rgba(0, 0, 0, .03),
+                     0 1px 6px -1px rgba(0, 0, 0, .02),
+                     0 2px 4px 0 rgba(0, 0, 0, .02);
+  --ant-shadow-dropdown: 0 6px 16px 0 rgba(0, 0, 0, .08),
+                         0 3px 6px -4px rgba(0, 0, 0, .12),
+                         0 9px 28px 8px rgba(0, 0, 0, .05);
+
+  /* ---- 控件规格：高 32（sm 24 / lg 40），移动端热区 >=44 ---- */
+  --ant-control-height: 32px;
+  --ant-control-height-sm: 24px;
+  --ant-control-height-lg: 40px;
+  --ant-control-height-mobile: 44px;
+
+  /* ---- z-index 规范：粘性列 1 · 粘性表头 5 · 下拉 40 · 顶栏 100 · 导航遮罩 1000 · 导航抽屉 1001 · 轻提示 1010 ---- */
+  --ant-z-sticky-col: 1;
+  --ant-z-sticky-header: 5;
+  --ant-z-topbar: 100;
+  --ant-z-dropdown: 40;
+  --ant-z-nav-mask: 1000;
+  --ant-z-nav-drawer: 1001;
+  --ant-z-message: 1010;
+
+  /* ---- 顶栏 ---- */
+  --ant-header-height: 46px;   /* antd 水平导航高度 + 底部 1px 分割 */
+
+  /* ---- 旧系统变量别名（_home_css.html / 少量内联样式仍引用，逐页迁移后移除） ---- */
+  --blue: var(--ant-primary);
+  --orange: var(--ant-brand);
+  --red: var(--ant-error);
+  --green: var(--ant-success);
+  --gray: rgba(0, 0, 0, .55);
+  --bg: var(--ant-color-bg-layout);
+  --card: var(--ant-color-bg-container);
+  --text: var(--ant-color-text);
+  --border: var(--ant-color-border);
+}
+
+/* ==========================================================================
+   2. Reset 与基础排版
+   ========================================================================== */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  font-family: var(--ant-font-family);
+  background: var(--ant-color-bg-layout);
+  color: var(--ant-color-text);
+  line-height: 1.6;
+  font-size: var(--ant-font-size-base);
+  /* 真正消除横向溢出：不给 body 设固定/最小宽度，宽内容一律收进滚动容器（.tw/.ant-table-wrap） */
+  max-width: 100%;
+}
+
+img, svg { max-width: 100%; }
+
+a { color: var(--ant-primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 小号（<=13px）链接用深一档主色 #0958d9（白底 / #fafafa / #e6f4ff 均 >=4.5） */
+.ant-page-footer a, .ant-tag a,
+.ant-table td a, td a:not(.ant-btn):not(.btn):not(.ant-chip),
+table.xl tr.tot a, .ant-alert a, .ant-empty-desc a { color: #0958d9; }
+.ant-table td a:hover, td a:not(.ant-btn):not(.btn):not(.ant-chip):hover,
+table.xl tr.tot a:hover, .ant-alert a:hover { color: #0958d9; }
+
+/* 键盘可达性：统一焦点环 */
+a:focus-visible, button:focus-visible, summary:focus-visible,
+input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--ant-primary);
+  outline-offset: 2px;
+}
+
+h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
+
+/* ==========================================================================
+   3. 图标 .ai（本地 sprite：<svg class="ai"><use href="#i-xxx"/></svg>）
+   ========================================================================== */
+.ai {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+  vertical-align: -.125em;
+  display: inline-block;
+  flex: none;
+}
+
+/* ==========================================================================
+   4. 布局与导航：ant-layout / ant-header / ant-menu / ant-dropdown
+   --------------------------------------------------------------------------
+   reportdb 顶栏沿用历史 hook（.topbar/.menu/.mi/.dd，顶栏 JS 与测试依赖这些
+   class 与 #topbar/#burger/#mainmenu），此处让它们与 ant-* 组件共享同一组规则；
+   新页面请直接使用 .ant-header / .ant-menu / .ant-dropdown。
+   ========================================================================== */
+
+/* ---- 4.1 页面骨架 ---- */
+.ant-layout { display: flex; flex-direction: column; min-height: 100vh; min-width: 0; }
+.ant-layout-content { flex: 1; min-width: 0; }
+
+/* ---- 4.2 顶栏（antd 水平导航：白底 + 底部 1px 分割，高 46） ---- */
+.ant-header, .topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--ant-z-topbar);
+  background: var(--ant-color-bg-container);
+  border-bottom: 1px solid var(--ant-color-split);
+}
+.ant-header > .in, .topbar > .in {
+  max-width: 1280px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--ant-header-height);
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* 品牌：橙色只出现在 logo 图形上，文字用主文本色（白底对比 >=4.5） */
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ant-color-text);
+  white-space: nowrap;
+  min-height: 32px;
+}
+.brand .ai { color: var(--ant-brand); font-size: 18px; }
+.brand:hover { text-decoration: none; color: var(--ant-color-text); }
+/* 品牌 logo 图形（猛士白底顶栏用 logo-blue.png，深/蓝底用 logo-white.png） */
+.brand-logo { height: 28px; width: auto; display: block; }
+
+/* ---- 4.3 水平菜单 ---- */
+.ant-menu, .menu {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.menu .sp { flex: 1; }
+
+.ant-menu-item, .mi { position: relative; }
+
+/* 菜单项：视觉高 36，热区 >=32x32 */
+.mi > a, .mi > button,
+.ant-menu-item > a, .ant-menu-item > button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--ant-font-size-base);
+  color: var(--ant-color-text);
+  border-radius: var(--ant-radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mi > a:hover, .mi > button:hover, .mi.open > button,
+.ant-menu-item > a:hover, .ant-menu-item > button:hover {
+  background: rgba(0, 0, 0, .04);
+  text-decoration: none;
+}
+/* 当前所在项：主色字 + 600；桌面水平菜单再加 2px 主色下划线（4.4b），抽屉里再加主色弱底（4.6） */
+.mi.on > a, .mi.on > button,
+.ant-menu-item.ant-menu-item-selected > a, .ant-menu-item.ant-menu-item-selected > button {
+  color: var(--ant-primary);
+  font-weight: 600;
+}
+
+/* 下拉触发按钮的箭头：DOM 在文本前（保证纯文本紧邻 </button>），视觉排到文本后 */
+.mi > button .dd-caret { order: 2; font-size: 10px; color: var(--ant-color-text-tertiary); }
+
+/* ---- 4.4 下拉面板（antd Dropdown.Menu：白底 / radius 8 / 下拉阴影 / item 高 32） ---- */
+.ant-dropdown, .dd {
+  display: none;
+  position: absolute;
+  left: 0;
+  top: 42px;
+  min-width: 200px;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-split);
+  border-radius: var(--ant-radius-lg);
+  box-shadow: var(--ant-shadow-dropdown);
+  padding: 4px;
+  z-index: var(--ant-z-dropdown);
+}
+.mi.right .dd { left: auto; right: 0; }
+.mi.open > .dd, .ant-menu-item.open > .ant-dropdown { display: block; }
+
+/* 桌面鼠标：从菜单项移到子菜单不闪烁（透明桥接区） */
+@media (hover: hover) and (min-width: 861px) {
+  .dd::before {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; top: -8px;
+    height: 8px;
+  }
+}
+
+/* 下拉项 */
+.dd a, .dd button.lnk,
+.ant-dropdown a, .ant-dropdown button.lnk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  padding: 5px 12px;
+  min-height: 32px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: var(--ant-font-size-base);
+  color: var(--ant-color-text);
+  border-radius: var(--ant-radius-md);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.dd a:hover, .dd button.lnk:hover, .dd a:focus-visible, .dd button.lnk:focus-visible,
+.ant-dropdown a:hover {
+  background: rgba(0, 0, 0, .04);
+  color: var(--ant-color-text);
+  text-decoration: none;
+}
+/* 下拉当前项：与顶栏 active 同一 token */
+.dd a.cur, .ant-dropdown a.cur {
+  color: var(--ant-primary);
+  font-weight: 600;
+  background: var(--ant-primary-bg);
+}
+.dd hr { border: 0; border-top: 1px solid var(--ant-color-split); margin: 4px 8px; }
+.dd .who {
+  padding: 8px 12px 4px;
+  font-size: var(--ant-font-size-sm);
+  color: var(--ant-color-text-secondary);
+}
+.dd form { margin: 0; }
+
+/* 待审批角标（antd Badge.Count：红底白字 16px 胶囊） */
+.badge-n, .ant-badge-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  margin-left: 6px;
+  background: var(--ant-error);
+  color: #fff;
+  border-radius: 8px;
+  font-size: var(--ant-font-size-sm);
+  line-height: 1;
+  font-weight: 400;
+}
+
+/* ---- 4.4b 桌面水平菜单（>860px）：Ant Design 式选中下划线 + 防溢出 ---- */
+@media (min-width: 861px) {
+  /* 选中项：2px 主色下划线（box-shadow 不挤占布局、不引起跳动） */
+  .mi.on > a, .mi.on > button,
+  .ant-menu-item.ant-menu-item-selected > a, .ant-menu-item.ant-menu-item-selected > button {
+    box-shadow: inset 0 -2px 0 var(--ant-primary);
+  }
+  /* 不换行的水平菜单放不下时：无下拉子菜单的菜单自身横向滚动（细滚动条），绝不撑出页面横向滚动；
+     带下拉的菜单不滚动（下拉是 absolute 定位，会被滚动容器裁剪），靠 4.5 的间距收紧兜底 */
+  .menu:not(:has(.dd)):not(:has(.ant-dropdown)),
+  .ant-menu:not(:has(.dd)):not(:has(.ant-dropdown)) {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+}
+
+/* ---- 4.5 汉堡按钮（<=860px 出现，与 cards.js 的 matchMedia 860px 对齐） ----
+   页面可用两种方式自带按钮：class="burger" 或 data-burger 属性，两者等价、被 cards.js
+   识别后不再自动插入第二只（开合仍由页面驱动，cards.js 只补遮罩/Esc/链接关闭行为）。
+   三道杠画在按钮 ::before/::after 上，打开时转成关闭叉；宿主页里的 svg.ai 在移动端让位。
+   .nav-backdrop 是页面自带的遮罩元素钩子（reportdb）：桌面隐藏，<=860px 见 4.6 的遮罩规则。 */
+.burger { display: none; }
+[data-burger] { display: none; }
+.nav-backdrop { display: none; }
+.burger, [data-burger] {
+  position: relative;
+  margin-left: auto;
+  width: 40px;
+  height: 36px;
+  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  border-radius: var(--ant-radius-md);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+.burger .ai, [data-burger] .ai { font-size: 16px; }
+
+/* 中等宽度先收紧内边距，避免顶栏自身溢出（带下拉的菜单不横向滚动，靠这里兜底） */
+@media (max-width: 1080px) {
+  .mi > a, .mi > button { padding: 0 8px; }
+  .brand { margin-right: 8px; font-size: 15px; }
+}
+@media (max-width: 920px) {
+  .ant-menu, .menu { gap: 0; }
+  .mi > a, .mi > button { padding: 0 6px; }
+}
+
+/* ---- 4.6 移动端导航（唯一断点 <=860px） ----
+   桌面端规则在本媒体查询之外，保持水平菜单；桌面无汉堡、无遮罩、无抽屉残留。
+   打开/关闭由 .topbar.open / .ant-header.open（或页面自管的 body.nav-open）驱动，切换的是
+   class 而不是 display，进场与退场因此都能走 CSS 过渡（display 切换做不了退出动画）：
+   · 抽屉 300ms translateX(100%) → 0，缓动 cubic-bezier(.23,1,.32,1)（Ant Design Drawer）
+   · 遮罩 300ms opacity 0 → 1，颜色 rgba(0,0,0,.45)
+   · visibility 在退场播完后才隐藏（transition-delay），避免滑出过程被提前裁掉
+   层级：遮罩 1000 / 抽屉 1001 / 顶栏自身 100（第 1 节 tokens）；抽屉 fixed 定于视口，
+   高度 = 100dvh − 顶栏高。顶栏及其内层禁止 transform/filter/backdrop-filter：一旦出现，
+   fixed 后代的包含块会变成顶栏而被裁剪/错位。prefers-reduced-motion 时见文末。 */
+@media (max-width: 860px) {
+  .topbar, .ant-header, .topbar > .in, .ant-header > .in {
+    transform: none !important;
+    filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  .burger, [data-burger] {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    /* 顶栏最右侧：汉堡永远是 .in 里最右的控件（order 压过 brand/nav/userbar） */
+    margin-left: auto;
+    margin-right: 0;
+    order: 999;
+    flex: none;
+  }
+  /* 顶栏已有导航汉堡时：隐藏浮动 #mhero-userbar（否则右上角会出现第二只汉堡叠住）
+     并取消 userbar 为自身预留的 padding-right，让顶栏汉堡贴齐右缘。 */
+  body:has(.burger) #mhero-userbar,
+  body:has([data-burger]) #mhero-userbar {
+    display: none !important;
+  }
+  body:has(.burger) > .nav,
+  body:has([data-burger]) > .nav,
+  body:has(.burger) > .topbar,
+  body:has([data-burger]) > .topbar,
+  body:has(.burger) .ant-header,
+  body:has([data-burger]) .ant-header {
+    padding-right: 0 !important;
+  }
+  .burger .ai, [data-burger] .ai {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0;
+  }
+  .burger::before, .burger::after,
+  [data-burger]::before, [data-burger]::after {
+    content: "";
+    position: absolute;
+    left: 12px;
+    width: 18px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 1px;
+    transition: transform .3s cubic-bezier(.23, 1, .32, 1), top .3s cubic-bezier(.23, 1, .32, 1), box-shadow .3s;
+  }
+  .burger::before, [data-burger]::before { top: 16px; box-shadow: 0 6px 0 currentColor; }
+  .burger::after, [data-burger]::after { top: 28px; }
+  .topbar.open .burger::before, .ant-header.open .burger::before,
+  .topbar.open [data-burger]::before, .ant-header.open [data-burger]::before {
+    top: 21px;
+    box-shadow: none;
+    transform: rotate(45deg);
+  }
+  .topbar.open .burger::after, .ant-header.open .burger::after,
+  .topbar.open [data-burger]::after, .ant-header.open [data-burger]::after {
+    top: 21px;
+    transform: rotate(-45deg);
+  }
+  /* 顶栏品牌与汉堡按钮的触控热区 >=44px */
+  .brand { min-height: var(--ant-control-height-mobile); }
+
+  /* 遮罩：盖住顶栏以下的页面，点击由 cards.js / 页面脚本关闭。
+     页面自带 .nav-backdrop 遮罩元素（reportdb）时用元素遮罩，伪元素遮罩退位，避免叠加变深。 */
+  .topbar::before, .ant-header::before {
+    content: "";
+    position: fixed;
+    left: 0; right: 0;
+    top: var(--ant-header-height);
+    bottom: 0;
+    background: rgba(0, 0, 0, .45);
+    z-index: var(--ant-z-nav-mask);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .3s ease, visibility 0s linear .3s;
+  }
+  .topbar.open::before, .ant-header.open::before {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity .3s ease, visibility 0s;
+  }
+  body:has(.nav-backdrop) .topbar::before,
+  body:has(.nav-backdrop) .ant-header::before { content: none; }
+  .nav-backdrop {
+    display: block;
+    position: fixed;
+    left: 0; right: 0;
+    top: var(--ant-header-height);
+    bottom: 0;
+    width: auto; height: auto; min-height: 0;
+    padding: 0; border: 0;
+    background: rgba(0, 0, 0, .45);
+    z-index: var(--ant-z-nav-mask);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .3s ease, visibility 0s linear .3s;
+  }
+  body.nav-open .nav-backdrop,
+  .topbar.open ~ .nav-backdrop,
+  .ant-header.open ~ .nav-backdrop {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity .3s ease, visibility 0s;
+  }
+
+  /* 顶栏是 sticky+z-index 的层叠上下文：抽屉在顶栏内，若顶栏层级(100)低于遮罩(1000)，
+     抽屉会被遮罩盖住而无法点击。打开时把顶栏整体抬到遮罩之上（遮罩从顶栏下沿开始，不会盖住顶栏）。 */
+  .topbar.open, .ant-header.open,
+  body.nav-open .topbar, body.nav-open .ant-header {
+    z-index: calc(var(--ant-z-nav-drawer) + 1);
+  }
+
+  /* 抽屉：菜单本体收成右侧面板（fixed 于视口，宽 min(300px, 82vw)） */
+  .menu, .ant-menu {
+    display: flex;
+    position: fixed;
+    top: var(--ant-header-height);
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: min(300px, 82vw);
+    background: var(--ant-color-bg-container);
+    border-left: 1px solid var(--ant-color-split);
+    box-shadow: var(--ant-shadow-dropdown);
+    flex-direction: column;
+    align-items: stretch;
+    padding: 8px 10px calc(16px + env(safe-area-inset-bottom, 0px));
+    gap: 0;
+    max-height: none;
+    overflow: auto;
+    overscroll-behavior: contain;
+    z-index: var(--ant-z-nav-drawer);
+    transform: translateX(100%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s linear .3s;
+  }
+  .topbar.open .menu, .topbar.open .ant-menu,
+  .ant-header.open .menu, .ant-header.open .ant-menu {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+    transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s;
+  }
+  .menu .sp { display: none; }
+  .mi > a, .mi > button {
+    width: 100%;
+    min-height: var(--ant-control-height-mobile);
+    height: auto;
+    justify-content: flex-start;
+  }
+  .mi > button .dd-caret { margin-left: auto; }
+  /* 抽屉内选中项：主色弱底 #e6f4ff + 主色字 #1677ff（与桌面下划线态区分） */
+  .mi.on > a, .mi.on > button,
+  .ant-menu-item.ant-menu-item-selected > a, .ant-menu-item.ant-menu-item-selected > button {
+    color: var(--ant-primary);
+    background: var(--ant-primary-bg);
+  }
+  /* 子菜单改为内嵌缩进列表 */
+  .dd, .ant-dropdown {
+    position: static;
+    display: none;
+    box-shadow: none;
+    border: 0;
+    border-left: 2px solid var(--ant-primary-bg);
+    border-radius: 0;
+    margin: 0 0 6px 12px;
+    padding: 2px 0;
+    min-width: 0;
+  }
+  .mi.open > .dd { display: block; }
+  .dd a, .dd button.lnk {
+    min-height: var(--ant-control-height-mobile);
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  .mi.right { border-top: 1px solid var(--ant-color-split); margin-top: 6px; padding-top: 6px; }
+
+  /* 没有自带汉堡的顶栏（如 VIP 的 .vip-nav）：cards.js 加上 .has-burger 后再收成抽屉。
+     脚本未运行时导航保持原样，避免只剩一个打不开的空顶栏。 */
+  .ant-header.has-burger > .in > nav:not(.menu):not(.ant-menu),
+  .topbar.has-burger > .in > nav:not(.menu):not(.ant-menu) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    position: fixed;
+    top: var(--ant-header-height);
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: min(300px, 82vw);
+    margin: 0;
+    padding: 8px 10px calc(16px + env(safe-area-inset-bottom, 0px));
+    background: #fff;
+    border-left: 1px solid var(--ant-color-split);
+    box-shadow: var(--ant-shadow-dropdown);
+    gap: 0;
+    z-index: var(--ant-z-nav-drawer);
+    overflow: auto;
+    overscroll-behavior: contain;
+    transform: translateX(100%);
+    visibility: hidden;
+    pointer-events: none;
+    /* 首次加上 .has-burger 时不要从水平菜单滑出；.nav-ready 之后才开过渡 */
+    transition: none;
+  }
+  .ant-header.has-burger.nav-ready > .in > nav:not(.menu):not(.ant-menu),
+  .topbar.has-burger.nav-ready > .in > nav:not(.menu):not(.ant-menu) {
+    transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s linear .3s;
+  }
+  .ant-header.has-burger.open > .in > nav:not(.menu):not(.ant-menu),
+  .topbar.has-burger.open > .in > nav:not(.menu):not(.ant-menu) {
+    transform: translateX(0);
+    visibility: visible;
+    pointer-events: auto;
+    transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s;
+  }
+  .ant-header.has-burger > .in > nav:not(.menu):not(.ant-menu) a,
+  .topbar.has-burger > .in > nav:not(.menu):not(.ant-menu) a {
+    width: 100%;
+    min-height: var(--ant-control-height-mobile);
+    height: auto;
+    justify-content: flex-start;
+  }
+  .ant-header.has-burger .vip-meta { display: none; }
+
+  /* 打开时锁滚动：ds 驱动（:has）与页面自管（body.nav-open）两条路都覆盖 */
+  body:has(.topbar.open),
+  body:has(.ant-header.open),
+  body.nav-open { overflow: hidden; }
+}
+
+/* ---- 4.7 黄页用户菜单（.hub-user，模板在 m-hero-hub） ----
+   黄页把用户样式写在 ds_css() 之后的内联 <style> 里，这里只用移动端、且带 !important
+   的属性压过那份 display/position。桌面端不写这些规则。
+   抽屉同样 300ms translateX，遮罩 300ms opacity。 */
+.hub-drawer-who { display: none; }
+@media (max-width: 860px) {
+  .hub-user > button {
+    width: 44px !important;
+    height: 44px !important;
+    min-height: 44px !important;
+    padding: 0 !important;
+    justify-content: center !important;
+    position: relative !important;
+    z-index: 3;
+    gap: 0 !important;
+  }
+  .hub-user > button .n,
+  .hub-user > button .ant-tag,
+  .hub-user > button .dd-caret,
+  .hub-user > button .avatar { display: none !important; }
+  .hub-user > button::before,
+  .hub-user > button::after {
+    content: "";
+    position: absolute;
+    left: 12px;
+    width: 18px;
+    height: 2px;
+    background: currentColor;
+    border-radius: 1px;
+    transition: transform .3s cubic-bezier(.23, 1, .32, 1), top .3s cubic-bezier(.23, 1, .32, 1), box-shadow .3s;
+  }
+  .hub-user > button::before { top: 16px; box-shadow: 0 6px 0 currentColor; }
+  .hub-user > button::after { top: 28px; }
+  .hub-user.open > button::before {
+    top: 21px;
+    box-shadow: none;
+    transform: rotate(45deg);
+  }
+  .hub-user.open > button::after {
+    top: 21px;
+    transform: rotate(-45deg);
+  }
+  .hub-user::before {
+    content: "";
+    position: fixed;
+    left: 0; right: 0;
+    top: var(--ant-header-height);
+    bottom: 0;
+    background: rgba(0, 0, 0, .45);
+    z-index: var(--ant-z-nav-mask);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .3s ease, visibility 0s linear .3s;
+  }
+  .hub-user.open::before {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transition: opacity .3s ease, visibility 0s;
+  }
+  .hub-user .dd,
+  .hub-user.open .dd,
+  .hub-user:hover .dd,
+  .hub-user:focus-within .dd {
+    display: flex !important;
+    flex-direction: column !important;
+    position: fixed !important;
+    top: var(--ant-header-height) !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: auto !important;
+    width: min(300px, 82vw) !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 12px 8px calc(16px + env(safe-area-inset-bottom, 0px)) !important;
+    border: 0 !important;
+    border-left: 1px solid var(--ant-color-split) !important;
+    border-radius: 0 !important;
+    box-shadow: var(--ant-shadow-dropdown) !important;
+    background: #fff !important;
+    z-index: var(--ant-z-nav-drawer) !important;
+    overflow: auto;
+    overscroll-behavior: contain;
+    transform: translateX(100%);
+    visibility: hidden;
+    pointer-events: none;
+    transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s linear .3s;
+  }
+  .hub-user.open .dd {
+    transform: translateX(0) !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    transition: transform .3s cubic-bezier(.23, 1, .32, 1), visibility 0s !important;
+  }
+  .hub-user .dd a { min-height: 44px !important; padding: 10px 12px !important; }
+  .hub-user .hub-drawer-who {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 12px 10px;
+    color: rgba(0, 0, 0, .88);
+    font-weight: 600;
+  }
+  body:has(.hub-user.open) { overflow: hidden; }
+}
+
+/* ==========================================================================
+   5. ant-page-header（h1 20/600 + 副标题 + 右侧 actions；移动端 actions 换行撑满）
+   ========================================================================== */
+.ant-page-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--ant-space-2) var(--ant-space-4);
+  margin: var(--ant-space-2) 0 var(--ant-space-4);
+  min-width: 0;
+}
+.ant-page-header .ant-page-header-heading { flex: 1 1 260px; min-width: 0; }
+.ant-page-header h1 {
+  font-size: var(--ant-font-size-page-title);
+  font-weight: 600;
+  color: var(--ant-color-text);
+  line-height: 1.4;
+}
+.ant-page-header-sub { margin-top: 2px; font-size: var(--ant-font-size-base); color: var(--ant-color-text-secondary); }
+.ant-page-header-meta {
+  margin-top: 2px;
+  font-size: var(--ant-font-size-sm);
+  color: var(--ant-color-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.ant-page-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ant-space-2);
+  align-items: center;
+  margin-left: auto;
+}
+.ant-page-header-actions .ant-input, .ant-page-header-actions select { width: auto; }
+
+/* ==========================================================================
+   6. ant-card（白底 / 1px 边框 / radius 8 / 卡片阴影；head 56px 16/600 + 分割线）
+   ========================================================================== */
+.ant-card {
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-split);
+  border-radius: var(--ant-radius-lg);
+  box-shadow: var(--ant-shadow-card);
+  margin-bottom: var(--ant-space-4);
+  min-width: 0;
+}
+.ant-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ant-space-3);
+  flex-wrap: wrap;
+  min-height: 56px;
+  padding: var(--ant-space-3) var(--ant-space-5);
+  border-bottom: 1px solid var(--ant-color-split);
+  font-size: var(--ant-font-size-card-title);
+  font-weight: 600;
+  color: var(--ant-color-text);
+}
+/* 卡片标题：h2 语义（16/600），可带 13px 次要副标题 */
+.ant-card-head-title, .ant-card-head h2 {
+  font-size: var(--ant-font-size-card-title);
+  font-weight: 600;
+  color: var(--ant-color-text);
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--ant-space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+  line-height: 1.4;
+}
+.ant-card-head-sub {
+  font-size: var(--ant-font-size-table);
+  font-weight: 400;
+  color: var(--ant-color-text-secondary);
+}
+.ant-card-head .ant-card-extra { display: flex; gap: var(--ant-space-2); align-items: center; flex-wrap: wrap; font-weight: 400; }
+.ant-card-body { padding: var(--ant-space-5); }
+.ant-card.ant-card-compact .ant-card-body { padding: var(--ant-space-4); }
+
+/* ==========================================================================
+   7. ant-btn（默认白底描边 / primary / dashed / text / link / danger；sm / lg / icon）
+   ========================================================================== */
+.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: var(--ant-control-height);
+  padding: 4px 15px;
+  font-size: var(--ant-font-size-base);
+  font-family: inherit;
+  line-height: 1.5714;
+  vertical-align: middle;
+  white-space: nowrap;
+  text-decoration: none;
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-md);
+  color: var(--ant-color-text);
+  cursor: pointer;
+  user-select: none;
+  transition: color .2s, border-color .2s, background .2s;
+}
+.ant-btn:hover { color: var(--ant-primary); border-color: var(--ant-primary); text-decoration: none; }
+.ant-btn:active { color: var(--ant-primary-active); border-color: var(--ant-primary-active); }
+
+/* 变体 */
+.ant-btn-primary {
+  background: var(--ant-primary);
+  border-color: var(--ant-primary);
+  color: #fff;
+}
+.ant-btn-primary:hover { background: var(--ant-primary-hover); border-color: var(--ant-primary-hover); color: #fff; }
+.ant-btn-primary:active { background: var(--ant-primary-active); border-color: var(--ant-primary-active); color: #fff; }
+
+.ant-btn-dashed { border-style: dashed; }
+
+.ant-btn-text { background: transparent; border-color: transparent; color: var(--ant-color-text); }
+.ant-btn-text:hover { background: rgba(0, 0, 0, .04); border-color: transparent; color: var(--ant-color-text); }
+
+.ant-btn-link { background: transparent; border-color: transparent; color: var(--ant-primary); padding: 4px 0; }
+.ant-btn-link:hover { color: var(--ant-primary-hover); border-color: transparent; }
+
+/* danger 描边按钮文字用深红 #cf1322（白底 ~5.9:1；边框保持 antd 红） */
+.ant-btn-danger { color: #cf1322; border-color: var(--ant-error); }
+.ant-btn-danger:hover { color: #cf1322; border-color: #ff7875; }
+.ant-btn.ant-btn-danger-filled { background: var(--ant-error); border-color: var(--ant-error); color: #fff; }
+.ant-btn.ant-btn-danger-filled:hover { background: #ff7875; border-color: #ff7875; color: #fff; }
+
+/* 尺寸 */
+.ant-btn-sm { height: var(--ant-control-height-sm); padding: 0 7px; font-size: var(--ant-font-size-sm); }
+.ant-btn-lg { height: var(--ant-control-height-lg); padding: 6.5px 18px; font-size: 15px; }
+
+/* 图标按钮（正方形）与纯图标对齐 */
+.ant-btn.ant-btn-icon { width: var(--ant-control-height); padding: 0; }
+.ant-btn-sm.ant-btn-icon { width: var(--ant-control-height-sm); }
+.ant-btn .ai { font-size: 14px; }
+.ant-btn-sm .ai { font-size: 12px; }
+
+/* 禁用 */
+.ant-btn[disabled], .ant-btn.ant-btn-disabled {
+  color: var(--ant-color-text-quaternary);
+  background: rgba(0, 0, 0, .04);
+  border-color: var(--ant-color-border);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* loading：保持按钮本色，整体 65% 透明度 + 旋转图标（antd Button loading，不用禁用灰底） */
+.ant-btn.ant-btn-loading,
+a.ant-btn-loading {
+  opacity: .65;
+  cursor: default;
+}
+.ant-btn.ant-btn-loading.is-locked,
+a.ant-btn-loading.is-locked { pointer-events: none; }
+.ant-btn.ant-btn-loading[disabled],
+.ant-btn.ant-btn-loading[disabled]:hover,
+.ant-btn.ant-btn-loading[disabled]:active {
+  opacity: .65;
+  cursor: default;
+  color: var(--ant-color-text);
+  background: var(--ant-color-bg-container);
+  border-color: var(--ant-color-border);
+}
+.ant-btn-primary.ant-btn-loading[disabled],
+.ant-btn-primary.ant-btn-loading[disabled]:hover,
+.ant-btn-primary.ant-btn-loading[disabled]:active {
+  color: #fff;
+  background: var(--ant-primary);
+  border-color: var(--ant-primary);
+}
+.ant-btn-danger.ant-btn-loading[disabled],
+.ant-btn-danger.ant-btn-loading[disabled]:hover,
+.ant-btn-danger.ant-btn-loading[disabled]:active {
+  color: #cf1322;
+  background: var(--ant-color-bg-container);
+  border-color: var(--ant-error);
+}
+.ant-btn-loading-icon { display: inline-flex; line-height: 0; }
+.ant-btn-loading [data-fb-hidden] { display: none; }
+.anticon-spin {
+  transform-origin: center;
+  animation: antSpinCircle 1s linear infinite;
+}
+@keyframes antSpinCircle { to { transform: rotate(360deg); } }
+
+/* ==========================================================================
+   8. 数据录入：ant-input / ant-select / ant-checkbox / ant-form-item / ant-filter-bar
+   ========================================================================== */
+
+/* ---- 8.1 输入框（border 1px #d9d9d9 / radius 6 / focus 主色 + 2px 光晕） ---- */
+.ant-input {
+  height: var(--ant-control-height);
+  padding: 4px 11px;
+  font-size: var(--ant-font-size-base);
+  font-family: inherit;
+  color: var(--ant-color-text);
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-md);
+  max-width: 100%;
+  transition: border-color .2s, box-shadow .2s;
+}
+.ant-input::placeholder { color: var(--ant-color-text-quaternary); }
+.ant-input:hover { border-color: var(--ant-primary-hover); }
+.ant-input:focus {
+  outline: none;
+  border-color: var(--ant-primary);
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, .1);
+}
+.ant-input[disabled] { color: var(--ant-color-text-quaternary); background: rgba(0, 0, 0, .04); cursor: not-allowed; }
+
+/* ---- 8.2 下拉选择（原生 select 换装：去系统外观，右侧本地 SVG 箭头） ---- */
+.ant-select {
+  appearance: none;
+  -webkit-appearance: none;
+  height: var(--ant-control-height);
+  padding: 4px 28px 4px 11px;
+  font-size: var(--ant-font-size-base);
+  font-family: inherit;
+  color: var(--ant-color-text);
+  background: var(--ant-color-bg-container)
+              url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='64 64 896 896'%3E%3Cpath fill='%238c8c8c' d='M840.4 300H183.6c-19.7 0-30.7 20.8-18.5 35l328.4 380.8c9.4 10.9 27.5 10.9 37 0L858.9 335c12.2-14.2 1.2-35-18.5-35z'/%3E%3C/svg%3E") no-repeat right 9px center / 11px 11px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-md);
+  cursor: pointer;
+  max-width: 100%;
+  transition: border-color .2s, box-shadow .2s;
+}
+.ant-select:hover { border-color: var(--ant-primary-hover); }
+.ant-select:focus {
+  outline: none;
+  border-color: var(--ant-primary);
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, .1);
+}
+
+/* ---- 8.3 复选框 ---- */
+.ant-checkbox { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; min-height: 28px; }
+.ant-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--ant-primary);
+  cursor: pointer;
+}
+.ant-checkbox-input:hover, .ant-checkbox:hover input[type="checkbox"] { accent-color: var(--ant-primary-hover); }
+.ant-checkbox.ant-checkbox-disabled { color: var(--ant-color-text-quaternary); cursor: not-allowed; }
+
+/* ---- 8.4 表单项（label 14 主文本色；行距 24；垂直/水平两种） ---- */
+.ant-form-item { margin-bottom: var(--ant-space-5); min-width: 0; }
+.ant-form-item-label { display: block; font-size: var(--ant-font-size-base); color: var(--ant-color-text); margin-bottom: var(--ant-space-1); }
+.ant-form-item-control { min-width: 0; }
+.ant-form-item .ant-input, .ant-form-item .ant-select { width: 100%; }
+.ant-form-item .ant-form-item-error { margin-top: 2px; font-size: var(--ant-font-size-sm); color: var(--ant-error-text); }
+.ant-form-item-hint { margin-top: 2px; font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); }
+.ant-form-horizontal { display: flex; flex-wrap: wrap; gap: var(--ant-space-3) var(--ant-space-5); align-items: flex-end; }
+.ant-form-horizontal .ant-form-item { margin-bottom: 0; }
+.ant-form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--ant-space-3) var(--ant-space-4); }
+
+/* ---- 8.5 筛选条（卡片内 flex-wrap：条件组 label+control 成对 + 右侧动作组） ---- */
+.ant-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ant-space-3) var(--ant-space-4);
+  align-items: center;
+  padding: var(--ant-space-2) 0;
+  min-width: 0;
+}
+.ant-filter-bar .ant-filter-item { display: flex; align-items: center; gap: var(--ant-space-2); min-width: 0; }
+.ant-filter-bar .ant-filter-item > label {
+  font-size: var(--ant-font-size-table);
+  color: var(--ant-color-text-secondary);
+  white-space: nowrap;
+}
+.ant-filter-bar .ant-filter-item > .ant-input,
+.ant-filter-bar .ant-filter-item > .ant-select { flex: 0 1 auto; }
+.ant-filter-actions { margin-left: auto; display: flex; gap: var(--ant-space-2); align-items: center; flex-wrap: wrap; }
+.ant-filter-bar .ant-filter-hint { font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); }
+
+/* ==========================================================================
+   9. ant-table（表头 #fafafa/600 · 行悬停 · 外层 radius 8 · 表头粘性 · 首列粘性）
+   ========================================================================== */
+.ant-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--ant-color-split);
+  border-radius: var(--ant-radius-lg);
+  background: var(--ant-color-bg-container);
+  max-width: 100%;
+}
+.ant-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: var(--ant-font-size-base); }
+.ant-table th, .ant-table td { padding: var(--ant-space-4); text-align: left; border-bottom: 1px solid var(--ant-color-split); }
+.ant-table th {
+  background: var(--ant-table-header-bg);
+  font-weight: 600;
+  color: var(--ant-color-text);
+  position: sticky;
+  top: 0;
+  z-index: var(--ant-z-sticky-header);
+  white-space: nowrap;
+}
+.ant-table td { background: var(--ant-color-bg-container); color: var(--ant-color-text); }
+.ant-table tbody tr:hover td { background: var(--ant-table-row-hover); }
+.ant-table tbody tr:last-child td { border-bottom: 0; }
+.ant-table tfoot td { font-weight: 600; background: var(--ant-table-header-bg); }
+.ant-table .ant-table-cell-num, .ant-table td.num, .ant-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 紧凑型 */
+.ant-table.ant-table-small th, .ant-table.ant-table-small td { padding: var(--ant-space-2); font-size: var(--ant-font-size-table); }
+
+/* 斑马纹（可选） */
+.ant-table.ant-table-zebra tbody tr:nth-child(even) td { background: var(--ant-table-stripe-bg); }
+.ant-table.ant-table-zebra tbody tr:hover td { background: var(--ant-table-row-hover); }
+
+/* 首列粘性（背景随行同步；右缘 1px 边界区分） */
+.ant-table.ant-table-sticky-first th:first-child, .ant-table.ant-table-sticky-first td:first-child {
+  position: sticky;
+  left: 0;
+  z-index: var(--ant-z-sticky-col);
+  border-right: 1px solid var(--ant-color-split);
+}
+.ant-table.ant-table-sticky-first thead th:first-child { z-index: 6; }  /* 左上角：盖过表头与首列 */
+.ant-table.ant-table-sticky-first tbody tr:nth-child(even) td:first-child { background: var(--ant-table-stripe-bg); }
+.ant-table.ant-table-sticky-first tbody tr:hover td:first-child { background: var(--ant-table-row-hover); }
+
+/* 排序列头 */
+.ant-table th.ant-table-column-sort { background: rgba(0, 0, 0, .02); }
+.ant-table th .arr, table th .arr { color: var(--ant-primary); font-size: var(--ant-font-size-sm); }
+.ant-table th .arr .ai, table th .arr .ai { font-size: 12px; }
+
+/* 表头副标题（如「已保/应保」）：任何表格的 th 内 small 都至少 12px */
+.ant-table th small, th small { display: block; font-weight: 400; font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); }
+
+/* ---- 9.6 表格移动端卡片化（<=768px）：配合 design-system/cards.js 使用 ----
+         JS 自动给表格加 .ant-table-cards、给 td 补 data-label（th 文本）/ data-card-title
+         （卡片标题列）/ data-cards-full（复选框/操作/输入等控件列），已有属性不覆盖；
+         支持 colspan 空表行、表头为空的列。全部规则仅在 <=768px 生效，桌面端零影响；
+         旧表格样式（粘性表头/冻结列/斑马/右对齐）一律用 !important 压过。 ---- */
+@media (max-width: 768px) {
+  /* 外层滚动容器（.tw/.ant-table-wrap/.sheet/.store-table-wrapper，JS 加 .ant-table-wrap-cards）：
+     取消边框/阴影/横向滚动/限高，卡片直接铺在页面里 */
+  .ant-table-wrap-cards {
+    border: 0 !important; border-radius: 0 !important; background: transparent !important;
+    box-shadow: none !important; overflow: visible !important; max-height: none !important;
+  }
+
+  .ant-table-cards { display: block !important; width: 100% !important; border-spacing: 0 !important; }
+  /* thead 视觉隐藏但保留在无障碍树（屏幕阅读器仍可读列名） */
+  .ant-table-cards thead {
+    display: block !important;
+    position: absolute !important; width: 1px !important; height: 1px !important;
+    padding: 0 !important; margin: -1px !important; overflow: hidden !important;
+    clip: rect(0 0 0 0) !important; clip-path: inset(50%) !important; white-space: nowrap !important;
+  }
+  .ant-table-cards tbody, .ant-table-cards tfoot { display: block !important; width: 100% !important; }
+
+  /* 每行一张卡片：圆角 / 边框 / 间距 */
+  .ant-table-cards tr {
+    display: block !important; width: 100% !important;
+    background: var(--ant-color-bg-container) !important;
+    border: 1px solid var(--ant-color-split) !important;
+    border-radius: var(--ant-radius-lg) !important;
+    box-shadow: var(--ant-shadow-card) !important;
+    margin: 0 0 var(--ant-space-3) !important;
+    padding: var(--ant-space-2) var(--ant-space-3) var(--ant-space-1) !important;
+  }
+  .ant-table-cards tr:last-child { margin-bottom: 0 !important; }
+  .ant-table-cards tfoot tr {
+    background: var(--ant-table-header-bg) !important;
+    border-style: dashed !important; box-shadow: none !important;
+  }
+
+  /* 单元格基础：解除粘性/冻结/斑马/nowrap/右对齐等桌面布局 */
+  .ant-table-cards th, .ant-table-cards td {
+    position: static !important; left: auto !important; right: auto !important; top: auto !important;
+    width: auto !important; max-width: 100% !important; min-width: 0 !important;
+    background: transparent !important; text-align: left !important;
+    border: 0 !important; border-bottom: 1px dashed var(--ant-color-split) !important;
+    padding: var(--ant-space-2) 0 !important;
+    white-space: normal !important; overflow: visible !important; text-overflow: clip !important;
+    overflow-wrap: anywhere;
+  }
+  .ant-table-cards tr > td:last-child, .ant-table-cards tr > th:last-child { border-bottom: 0 !important; }
+
+  /* 卡片标题列（td[data-card-title]，JS 从 th[data-card-title] 或首个有效列复制）：只显值 */
+  .ant-table-cards td[data-card-title] {
+    border-bottom: 1px solid var(--ant-color-split) !important;
+    font-size: 15px; font-weight: 600; color: var(--ant-color-text);
+    padding-top: var(--ant-space-1) !important; display: block !important;
+  }
+  .ant-table-cards td[data-card-title]::before { content: none !important; }
+
+  /* 其余字段：「标签–值」两列网格。::before 占第 1 列并跨全部行，
+     单元格里的其余内容（元素与匿名文本）自动落进第 2 列堆叠 */
+  .ant-table-cards td[data-label]:not([data-card-title]):not([data-cards-full]):not([colspan]) {
+    display: grid !important;
+    grid-template-columns: minmax(4.5em, 38%) minmax(0, 1fr);
+    column-gap: var(--ant-space-3); row-gap: 0; align-items: baseline;
+  }
+  .ant-table-cards td[data-label]:not([data-card-title]):not([colspan])::before {
+    content: attr(data-label);
+    grid-column: 1; grid-row: 1;
+    font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary);
+    align-self: start; line-height: 1.65; min-width: 0;
+  }
+  .ant-table-cards td[data-label] .ant-tag { margin-right: 4px; }
+
+  /* 控件列：表头为空的列（复选框/操作）与含控件/链接组的列（JS 标 data-cards-full）
+     —— 控件整行宽、触控 >=44px；标签（若有）单独一行 */
+  .ant-table-cards td:not([data-label]):not([colspan]),
+  .ant-table-cards td[data-cards-full]:not([colspan]) {
+    display: flex !important; flex-wrap: wrap; gap: var(--ant-space-2); align-items: center;
+  }
+  .ant-table-cards td[data-cards-full][data-label]::before {
+    content: attr(data-label); flex: 0 0 100%;
+    font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); line-height: 1.65;
+  }
+  .ant-table-cards td[data-cards-full] > * { flex: 1 1 160px; min-width: 0; }
+  .ant-table-cards td[data-cards-full] > .ant-check-hit { flex: 0 0 auto; min-width: var(--ant-control-height-mobile); }
+  .ant-table-cards td[data-cards-full] a:not(.ant-tag):not(.ant-chip) {
+    display: inline-flex; align-items: center; min-height: var(--ant-control-height-mobile);
+  }
+  .ant-table-cards td[data-cards-full] .ant-btn, .ant-table-cards td[data-cards-full] .btn,
+  .ant-table-cards td[data-cards-full] button { flex: 1 1 auto; min-height: var(--ant-control-height-mobile); }
+  .ant-table-cards td[data-cards-full] input.ant-input,
+  .ant-table-cards td[data-cards-full] input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]) {
+    width: 100% !important; min-width: 0 !important;
+  }
+  .ant-table-cards td form { display: flex; flex-wrap: wrap; gap: var(--ant-space-2); align-items: center; margin: 0; }
+  .ant-table-cards td:not([data-label]):not([data-cards-full]):not([colspan]) > * { flex: 0 0 auto; }
+
+  /* 纯行号列（#）在卡片里没有信息量：隐藏 */
+  .ant-table-cards td[data-label="#"]:not([data-card-title]):not([data-cards-full]):not([colspan]) { display: none !important; }
+
+  /* colspan 行（空状态 / 合并说明）：普通块，无边框无标签 */
+  .ant-table-cards td[colspan] { display: block !important; border: 0 !important; }
+  .ant-table-cards td[colspan]::before { content: none !important; }
+
+  /* 备件矩阵语义色（绿底被透明背景取代，改用文字色保留「已备/未备」信号） */
+  .ant-table-cards td.cell1 { color: var(--ant-success-text) !important; }
+  .ant-table-cards td.cell0 { color: var(--ant-color-text-tertiary) !important; }
+
+  .ant-table-cards .ant-empty { padding: var(--ant-space-4); }
+
+  /* 申请页提交按钮：吸附卡片底部、整行宽易点（桌面不变） */
+  .apply-submit {
+    position: sticky; bottom: 0; z-index: 16; display: flex; gap: var(--ant-space-2);
+    margin: var(--ant-space-3) calc(-1 * var(--ant-space-3)) calc(-1 * var(--ant-space-3));
+    padding: var(--ant-space-2) var(--ant-space-3) calc(var(--ant-space-2) + env(safe-area-inset-bottom, 0px));
+    background: var(--ant-color-bg-container);
+    border-top: 1px solid var(--ant-color-split);
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, .05);
+  }
+  .apply-submit .ant-btn, .apply-submit .btn { flex: 1 1 auto; min-height: 48px; }
+
+  /* 逐条提交：卡片内整行宽「提交申请」按钮，触控 >=44px */
+  .ant-table-cards td.row-action { display: block !important; }
+  .ant-table-cards td.row-action::before { content: none !important; }
+  .ant-table-cards .row-form { display: block; width: 100%; }
+  .ant-table-cards .row-form .ant-btn { display: flex; width: 100%; align-items: center; justify-content: center; }
+  .ant-table-cards .row-form .ant-btn { min-height: 44px; }
+}
+
+/* ---- 9.7 吸顶筛选容器（列表页滚动时筛选保持在顶栏下方） ---- */
+.ant-sticky-filter {
+  position: sticky;
+  top: var(--ant-header-height);
+  z-index: 20;
+}
+
+/* ==========================================================================
+   10. ant-tag / ant-badge
+   ========================================================================== */
+
+/* ---- 10.1 Tag（radius 4 / 12px / 浅底 + 同色边框 + 深字，white-space:nowrap） ---- */
+.ant-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 7px;
+  height: 22px;
+  line-height: 20px;
+  font-size: var(--ant-font-size-sm);
+  border-radius: var(--ant-radius-sm);
+  border: 1px solid var(--ant-color-border);
+  background: var(--ant-color-bg-subtle);
+  color: var(--ant-color-text);
+  white-space: nowrap;
+}
+.ant-tag-success { background: var(--ant-success-bg); border-color: var(--ant-success-border); color: var(--ant-success-text); }
+.ant-tag-warning { background: var(--ant-warning-bg); border-color: var(--ant-warning-border); color: var(--ant-warning-text); }
+.ant-tag-error   { background: var(--ant-error-bg);   border-color: var(--ant-error-border);   color: var(--ant-error-text); }
+.ant-tag-processing { background: var(--ant-primary-bg); border-color: #91caff; color: var(--ant-primary-active); }
+
+/* ---- 10.2 Badge（状态点 + 文本） ---- */
+.ant-badge-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ant-font-size-sm); white-space: nowrap; }
+.ant-badge-status-dot { width: 6px; height: 6px; border-radius: 3px; background: var(--ant-color-text-quaternary); flex: none; }
+.ant-badge-status-success .ant-badge-status-dot { background: var(--ant-success); }
+.ant-badge-status-error .ant-badge-status-dot { background: var(--ant-error); }
+.ant-badge-status-warning .ant-badge-status-dot { background: var(--ant-warning); }
+.ant-badge-status-processing .ant-badge-status-dot { background: var(--ant-primary); }
+
+/* ==========================================================================
+   11. ant-alert（info/success/warning/error，浅底 + 同色边框，可带 .ai 图标）
+   ========================================================================== */
+.ant-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--ant-space-2);
+  padding: 8px 12px;
+  font-size: var(--ant-font-size-table);
+  line-height: 1.5714;
+  border-radius: var(--ant-radius-md);
+  border: 1px solid var(--ant-color-split);
+  background: var(--ant-color-bg-subtle);
+  color: var(--ant-color-text);
+}
+.ant-alert .ant-alert-icon { font-size: 14px; flex: none; margin-top: 2px; }
+.ant-alert .ant-alert-content { flex: 1; min-width: 0; }
+.ant-alert .ant-alert-title { font-weight: 600; margin-bottom: 2px; }
+.ant-alert .ant-alert-action { margin-left: auto; }
+.ant-alert-info    { background: var(--ant-info-bg);    border-color: #91caff; }
+.ant-alert-info .ant-alert-icon { color: var(--ant-primary); }
+.ant-alert-success { background: var(--ant-success-bg); border-color: var(--ant-success-border); }
+.ant-alert-success .ant-alert-icon { color: var(--ant-success); }
+.ant-alert-warning { background: var(--ant-warning-bg); border-color: var(--ant-warning-border); }
+.ant-alert-warning .ant-alert-icon { color: var(--ant-warning); }
+.ant-alert-error   { background: var(--ant-error-bg);   border-color: var(--ant-error-border); color: var(--ant-error-text); }
+.ant-alert-error .ant-alert-icon { color: var(--ant-error); }
+
+/* ==========================================================================
+   12. ant-empty（空状态：inbox 图标 + 标题 14 + 说明 13 + 行动按钮）
+   ========================================================================== */
+.ant-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ant-space-2);
+  padding: var(--ant-space-6) var(--ant-space-4);
+  text-align: center;
+}
+.ant-empty .ant-empty-image { color: var(--ant-color-text-quaternary); font-size: 40px; line-height: 1; }
+.ant-empty .ant-empty-image .ai { width: 40px; height: 40px; }
+.ant-empty .ant-empty-title { font-size: var(--ant-font-size-base); color: var(--ant-color-text); font-weight: 600; }
+.ant-empty .ant-empty-desc { font-size: var(--ant-font-size-table); color: var(--ant-color-text-secondary); max-width: 420px; }
+.ant-empty .ant-empty-actions { display: flex; gap: var(--ant-space-2); margin-top: var(--ant-space-1); }
+
+/* ==========================================================================
+   13. ant-pagination（页码 32x32 / 当前页主色；移动端 >=44）
+   ========================================================================== */
+.ant-pagination { display: flex; gap: var(--ant-space-2); align-items: center; flex-wrap: wrap; }
+.ant-pagination .ant-pagination-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-md);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  font-size: var(--ant-font-size-table);
+  cursor: pointer;
+  text-decoration: none;
+}
+.ant-pagination .ant-pagination-item:hover { color: var(--ant-primary); border-color: var(--ant-primary); text-decoration: none; }
+.ant-pagination .ant-pagination-item-active { color: var(--ant-primary); border-color: var(--ant-primary); font-weight: 600; }
+.ant-pagination .ant-pagination-disabled { color: var(--ant-color-text-quaternary); pointer-events: none; }
+.ant-pagination .ant-pagination-total { font-size: var(--ant-font-size-table); color: var(--ant-color-text-secondary); }
+
+/* ==========================================================================
+   14. ant-collapse（details.ant-collapse：summary 即头部，原生展开/收起）
+   ========================================================================== */
+details.ant-collapse {
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-split);
+  border-radius: var(--ant-radius-lg);
+  margin-bottom: var(--ant-space-2);
+  min-width: 0;
+}
+details.ant-collapse > summary {
+  display: flex;
+  align-items: center;
+  gap: var(--ant-space-2);
+  padding: var(--ant-space-3) var(--ant-space-4);
+  min-height: 46px;
+  cursor: pointer;
+  font-size: var(--ant-font-size-table);
+  font-weight: 600;
+  color: var(--ant-color-text);
+  list-style: none;
+  border-radius: var(--ant-radius-lg);
+}
+details.ant-collapse > summary::-webkit-details-marker { display: none; }
+details.ant-collapse > summary::after {
+  content: '';
+  margin-left: auto;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  background: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='64 64 896 896'%3E%3Cpath fill='%238c8c8c' d='M840.4 300H183.6c-19.7 0-30.7 20.8-18.5 35l328.4 380.8c9.4 10.9 27.5 10.9 37 0L858.9 335c12.2-14.2 1.2-35-18.5-35z'/%3E%3C/svg%3E") no-repeat center / contain;
+  transition: transform .2s;
+}
+details.ant-collapse[open] > summary { border-bottom: 1px solid var(--ant-color-split); border-radius: var(--ant-radius-lg) var(--ant-radius-lg) 0 0; }
+details.ant-collapse[open] > summary::after { transform: rotate(180deg); }
+details.ant-collapse > .ant-collapse-content { padding: var(--ant-space-3) var(--ant-space-4); }
+details.ant-collapse.ant-collapse-ghost { border: 0; background: transparent; }
+
+/* ==========================================================================
+   15. ant-statistic / ant-descriptions
+   ========================================================================== */
+
+/* ---- 15.1 Statistic（标题 12 次要色 + 大数字 28/600，仅此场景允许大数字） ---- */
+.ant-statistic { text-align: center; padding: var(--ant-space-3); background: var(--ant-color-bg-container); border: 1px solid var(--ant-color-split); border-radius: var(--ant-radius-lg); }
+.ant-statistic .ant-statistic-title { font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); margin-bottom: var(--ant-space-1); }
+.ant-statistic .ant-statistic-content {
+  font-size: var(--ant-font-size-stat);
+  font-weight: 600;
+  color: var(--ant-color-text);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.3;
+}
+.ant-statistic .ant-statistic-content-primary { color: var(--ant-primary); }
+.ant-statistic .ant-statistic-content-success { color: var(--ant-success-text); }
+.ant-statistic .ant-statistic-content-danger { color: var(--ant-error-text); }
+
+/* ---- 15.2 Descriptions（label: value 成对；label 次要色靠右/在上） ---- */
+.ant-descriptions { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--ant-space-2) var(--ant-space-4); }
+.ant-descriptions-item { display: flex; gap: var(--ant-space-2); align-items: baseline; min-width: 0; }
+.ant-descriptions-item-label { color: var(--ant-color-text-secondary); white-space: nowrap; }
+.ant-descriptions-item-label::after { content: '：'; }
+.ant-descriptions-item-content { color: var(--ant-color-text); min-width: 0; }
+
+/* ==========================================================================
+   16. ant-tooltip-hint（行内小提示：虚线下划 + help 光标，配 title / details 使用）
+   ========================================================================== */
+.ant-tooltip-hint {
+  border-bottom: 1px dashed var(--ant-color-text-quaternary);
+  cursor: help;
+  color: var(--ant-color-text-secondary);
+}
+.ant-tooltip-hint:hover { color: var(--ant-primary); border-bottom-color: var(--ant-primary); }
+details.ant-tooltip-hint { display: inline-block; border: 0; }
+details.ant-tooltip-hint > summary { cursor: help; }
+details.ant-tooltip-hint > summary::-webkit-details-marker { display: none; }
+
+/* ==========================================================================
+   17. ant-segmented（分段控制器：灰底胶囊容器 + 白底激活项）
+   ========================================================================== */
+.ant-segmented {
+  display: inline-flex;
+  padding: 2px;
+  background: rgba(0, 0, 0, .04);
+  border-radius: var(--ant-radius-md);
+  gap: 2px;
+}
+.ant-segmented .ant-segmented-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 11px;
+  font-size: var(--ant-font-size-table);
+  color: var(--ant-color-text);
+  border: 0;
+  background: transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+}
+.ant-segmented .ant-segmented-item:hover { color: var(--ant-color-text); }
+.ant-segmented .ant-segmented-item-active,
+.ant-segmented .ant-segmented-item[aria-pressed="true"] {
+  background: var(--ant-color-bg-container);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, .06);
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   18. 工具类
+   ========================================================================== */
+.ant-text-secondary { color: var(--ant-color-text-secondary); }
+.ant-text-tertiary { color: var(--ant-color-text-tertiary); }
+.ant-text-disabled { color: var(--ant-color-text-quaternary); }
+.ant-text-primary { color: var(--ant-primary); }
+.ant-text-success { color: var(--ant-success-text); }
+.ant-text-warning { color: var(--ant-warning-text); }
+.ant-text-danger { color: var(--ant-error-text); }
+.ant-text-sm { font-size: var(--ant-font-size-sm); }
+.ant-text-md { font-size: var(--ant-font-size-table); }
+.ant-text-strong { font-weight: 600; }
+.ant-text-nowrap { white-space: nowrap; }
+.ant-num, .ant-tabular-nums { font-variant-numeric: tabular-nums; }
+.ant-mono-num { font-variant-numeric: tabular-nums; text-align: right; }
+.ant-mt-1 { margin-top: var(--ant-space-1); }  .ant-mt-2 { margin-top: var(--ant-space-2); }
+.ant-mt-3 { margin-top: var(--ant-space-3); }  .ant-mt-4 { margin-top: var(--ant-space-4); }
+.ant-mb-2 { margin-bottom: var(--ant-space-2); } .ant-mb-4 { margin-bottom: var(--ant-space-4); }
+.ant-flex { display: flex; flex-wrap: wrap; gap: var(--ant-space-2); align-items: center; min-width: 0; }
+.ant-flex-right { margin-left: auto; }
+.ant-w-100 { width: 100%; }
+.ant-hidden { display: none; }
+
+/* ---- 18.1 链接胶囊（快捷入口 / 分组导航链接：Tag 外观 + 可点击） ---- */
+.ant-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  font-size: var(--ant-font-size-table);
+  color: var(--ant-color-text);
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-sm);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ant-chip:hover { color: #0958d9; border-color: var(--ant-primary); text-decoration: none; }
+.ant-chip .ai { color: var(--ant-color-text-tertiary); }
+.ant-chip:hover .ai { color: #0958d9; }
+.ant-chip .ant-chip-count { color: var(--ant-color-text-secondary); font-size: var(--ant-font-size-sm); font-variant-numeric: tabular-nums; font-weight: 400; }
+/* 快捷入口分组标签 */
+.ant-chip-group-label {
+  font-size: var(--ant-font-size-table);
+  font-weight: 600;
+  color: var(--ant-color-text-secondary);
+  margin: 0 0 var(--ant-space-2);
+}
+.ant-chip-group { display: flex; flex-wrap: wrap; gap: var(--ant-space-2); margin-bottom: var(--ant-space-3); }
+
+/* 裸 checkbox 的扩大热区容器：<label class="ant-check-hit"><input type="checkbox"></label> */
+.ant-check-hit { display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px; cursor: pointer; }
+.ant-check-hit input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--ant-primary); cursor: pointer; }
+
+/* ---- 18.2 页脚（口径 / 快照来源等次要信息） ---- */
+.ant-page-footer {
+  margin: var(--ant-space-2) 0 var(--ant-space-5);
+  font-size: var(--ant-font-size-sm);
+  color: var(--ant-color-text-secondary);
+  line-height: 1.6;
+}
+.ant-page-footer a { color: #0958d9; display: inline-block; padding: 4px 2px; }
+.ant-page-footer a:hover { color: var(--ant-primary-active); }
+
+/* ---- 18.3 登录页（独立页面复用同一套 tokens / 组件；白卡片上用蓝色 logo） ---- */
+.ant-login-page { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: var(--ant-space-4); }
+.ant-login-card { width: 100%; max-width: 360px; padding: var(--ant-space-6) var(--ant-space-5); margin-bottom: 0; }
+.ant-login-logo { height: 28px; width: auto; display: block; margin: 0 auto var(--ant-space-4); }
+.ant-login-card h1 {
+  font-size: var(--ant-font-size-page-title);
+  font-weight: 600;
+  color: var(--ant-color-text);
+  display: flex;
+  align-items: center;
+  gap: var(--ant-space-2);
+  margin-bottom: var(--ant-space-1);
+}
+.ant-login-card h1 .ai { color: var(--ant-brand); font-size: 22px; }
+.ant-login-sub { color: var(--ant-color-text-secondary); font-size: var(--ant-font-size-base); margin-bottom: var(--ant-space-5); }
+.ant-login-card .ant-btn { width: 100%; margin-top: var(--ant-space-4); }
+
+/* ==========================================================================
+   19. 移动端全局适配（<=768px：触控 44px / filter-bar 堆叠 / actions 撑满换行）
+   --------------------------------------------------------------------------
+   覆盖 360 / 390 / 414 常见宽度；导航汉堡在 4.6 节（<=860px）单独处理。
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* 品牌-logo 在窄屏收紧到 22px 高 */
+  .brand-logo { height: 22px; }
+
+  /* 可点击控件最小高度 44px（热区；视觉字号不变） */
+  .ant-btn, .btn,
+  button:not(.burger),
+  .ant-input, input[type="text"], input[type="password"], input[type="search"],
+  input[type="date"], input[type="number"],
+  .ant-select, select {
+    min-height: var(--ant-control-height-mobile);
+    height: auto;
+  }
+  .ant-btn-sm, .btn-sm { min-height: var(--ant-control-height-mobile); }
+  .ant-pagination .ant-pagination-item { min-width: var(--ant-control-height-mobile); height: var(--ant-control-height-mobile); }
+  .pager .btn { min-width: 44px; }
+
+  /* 筛选条纵向堆叠：每项 100% 宽；项内放不下时（如日期区间）自动换行 */
+  .ant-filter-bar { flex-direction: column; align-items: stretch; gap: var(--ant-space-2); }
+  .ant-filter-bar .ant-filter-item { width: 100%; flex-wrap: wrap; row-gap: var(--ant-space-2); }
+  .ant-filter-bar .ant-filter-item input[type="date"] { flex: 1 1 120px; min-width: 0; width: auto; }
+  .ant-filter-bar .ant-filter-item > .ant-input,
+  .ant-filter-bar .ant-filter-item > .ant-select { flex: 1 1 auto; width: 100%; }
+  .ant-filter-actions { margin-left: 0; width: 100%; }
+  .ant-filter-actions .ant-btn { flex: 1 1 auto; }
+
+  /* 表单项纵向堆叠 100% 宽 */
+  .ant-form-horizontal { flex-direction: column; align-items: stretch; }
+  .ant-form-horizontal .ant-form-item { width: 100%; }
+
+  /* page-header 纵向堆叠：标题、副标题、操作按钮依次排列，间距 8px；
+     heading 必须归零 flex-basis（桌面 row 方向的 1 1 260px 在 column 方向会把
+     260px 当高度用，标题与按钮之间出现 ~200px 空白） */
+  .ant-page-header { flex-direction: column; align-items: stretch; gap: var(--ant-space-2); }
+  .ant-page-header .ant-page-header-heading { flex: 0 0 auto; }
+  .ant-page-header-actions { width: 100%; margin-left: 0; }
+  .ant-page-header-actions .ant-btn, .ant-page-header-actions .btn { flex: 1 1 auto; }
+
+  /* 旧筛选表单同样堆叠 */
+  form.filters { flex-direction: column; align-items: stretch; gap: var(--ant-space-2); }
+  form.filters label { width: 100%; }
+  form.filters select, form.filters input { width: 100%; flex: 1 1 auto; }
+  form.filters .btn { width: 100%; }
+
+  /* 卡片收紧 */
+  .ant-card .ant-card-body { padding: var(--ant-space-3); }
+  .ant-card-head { padding: var(--ant-space-3); }
+
+  /* 链接胶囊 / 复选框触控热区 >=44px（checkbox 本体 16px，热区由 label 撑开） */
+  .ant-chip { min-height: var(--ant-control-height-mobile); height: auto; }
+  .ant-checkbox { min-height: var(--ant-control-height-mobile); }
+  .ant-check-hit {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--ant-control-height-mobile);
+    min-height: var(--ant-control-height-mobile);
+    cursor: pointer;
+  }
+  /* 页脚/段落/页头 meta 里的行内链接（如 JSON API、「只看修正结果」）触控热区 >=44px */
+  .ant-page-footer a, p.muted a, .ant-page-header-meta a {
+    display: inline-block;
+    min-height: var(--ant-control-height-mobile);
+    padding: 10px 2px;
+  }
+
+  /* 表格与分页 */
+  .ant-table { font-size: 12.5px; }
+  .ant-table th, .ant-table td { padding: var(--ant-space-2); }
+}
+
+/* 极窄屏（360px 档）的容器/按钮规则见 21.15（兼容层之后，避免被 21.13 覆盖） */
+
+/* ==========================================================================
+   20. 打印
+   ========================================================================== */
+@media print {
+  .topbar, .ant-header, .burger, [data-burger], .nav-backdrop, .pager, .ant-pagination,
+  .ant-message, .ant-notification,
+  #preview-banner form, .btn-export { display: none !important; }
+  body { background: #fff; font-size: 12px; }
+  .container { max-width: none; margin: 0; padding: 0; }
+  .card, .ant-card { box-shadow: none; border-color: #ccc; }
+  .tw, .ant-table-wrap { overflow: visible; }
+}
+
+/* ==========================================================================
+   21. 兼容层：reportdb 旧模板 class → 新组件样式（逐页迁移后删除）
+   --------------------------------------------------------------------------
+   覆盖旧 base.html 内联样式里的全部 class：.container、.card、.grid、.stat、
+   .muted、.btn 系列、form.filters、.tw、裸 table、.sticky1、.cell0、.cell1、
+   .ok、.bad、.badge、.b-ok、.b-warn、.links、.pager、details.hint、
+   #preview-banner 等。旧变量别名见第 1 节。
+   （注意：本注释内严禁出现「星号+斜杠」序列，否则会提前终止注释吞掉后续规则）
+   ========================================================================== */
+
+/* ---- 21.1 页面容器：与顶栏同宽居中（1280），页面顶部留 24px ---- */
+.container {
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: var(--ant-space-5) var(--ant-space-5) 0;
+  min-width: 0;
+}
+
+/* ---- 21.2 卡片（单层定义，替代旧文件「基础 + 统一美化」两遍覆盖） ---- */
+.card {
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-split);
+  border-radius: var(--ant-radius-lg);
+  box-shadow: var(--ant-shadow-card);
+  padding: var(--ant-space-4) 18px;
+  margin-bottom: var(--ant-space-4);
+  min-width: 0;
+}
+.card h2 {
+  font-size: var(--ant-font-size-card-title);
+  font-weight: 600;
+  padding-bottom: var(--ant-space-2);
+  margin-bottom: var(--ant-space-3);
+  border-bottom: 1px solid var(--ant-color-split);
+  display: flex;
+  align-items: baseline;
+  gap: var(--ant-space-2);
+  flex-wrap: wrap;
+}
+.card h2 .muted { font-weight: 400; }
+.card h3 { font-size: var(--ant-font-size-base); margin: 14px 0 6px; }
+
+/* ---- 21.3 统计块（.stat：旧首页/预览页） ---- */
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--ant-space-3); margin-bottom: var(--ant-space-3); }
+.stat {
+  padding: var(--ant-space-3);
+  background: var(--ant-color-bg-container);
+  border: 1px solid var(--ant-color-split);
+  border-radius: var(--ant-radius-lg);
+  text-align: center;
+}
+.stat .num { font-size: var(--ant-font-size-stat); font-weight: 600; color: var(--ant-primary); font-variant-numeric: tabular-nums; }
+.stat .label { font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); }
+
+/* ---- 21.4 次要文字 ---- */
+.muted { color: var(--ant-color-text-secondary); font-size: var(--ant-font-size-sm); line-height: 1.5; }
+
+/* ---- 21.5 按钮（旧 .btn 系列映射到 ant-btn 规格） ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 14px;
+  min-height: var(--ant-control-height);
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-md);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  font-size: var(--ant-font-size-table);
+  font-family: inherit;
+  cursor: pointer;
+  line-height: var(--ant-line-height-base);
+  vertical-align: middle;
+  white-space: nowrap;
+  text-decoration: none;
+  user-select: none;
+}
+.btn:hover { border-color: var(--ant-primary); color: var(--ant-primary); text-decoration: none; }
+.btn-primary { background: var(--ant-primary); color: #fff; border-color: var(--ant-primary); }
+.btn-primary:hover { background: var(--ant-primary-hover); border-color: var(--ant-primary-hover); color: #fff; }
+.btn-primary { font-weight: 600; }
+/* 导出按钮：不再 float，统一 default 外观 + download 图标，放在 page-header actions 或卡片 extra */
+.btn-export { color: var(--ant-color-text); }
+.btn-export:hover { color: var(--ant-primary); border-color: var(--ant-primary); background: var(--ant-color-bg-container); }
+.btn-sm { padding: 3px 8px; min-height: var(--ant-control-height-sm); height: auto; font-size: var(--ant-font-size-sm); }
+a.btn { display: inline-flex; }
+
+/* ---- 21.6 筛选表单（旧 form.filters） ---- */
+form.filters { display: flex; gap: var(--ant-space-2) var(--ant-space-3); flex-wrap: wrap; align-items: center; padding: var(--ant-space-2) 0 4px; }
+form.filters label { font-size: var(--ant-font-size-table); color: var(--ant-color-text-secondary); }
+form.filters select, form.filters input {
+  padding: 4px 9px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-md);
+  font-size: var(--ant-font-size-table);
+  font-family: inherit;
+  background: var(--ant-color-bg-container);
+  max-width: 100%;
+  min-height: var(--ant-control-height);
+  color: var(--ant-color-text);
+}
+form.filters select:focus, form.filters input:focus {
+  outline: none;
+  border-color: var(--ant-primary);
+  box-shadow: 0 0 0 2px rgba(5, 145, 255, .1);
+}
+form.filters .btn-primary { padding: 6px 18px; }
+form.filters input[type="checkbox"] { min-height: 0; width: 16px; height: 16px; accent-color: var(--ant-primary); }
+
+/* ---- 21.7 表格（旧全局裸 table 样式；th 粘性、斑马、悬停均在此单层定义） ---- */
+.tw { min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: var(--ant-radius-md); max-width: 100%; }
+.tw.freeze-wrap { max-height: 75vh; overflow: auto; }
+table { width: 100%; border-collapse: collapse; font-size: var(--ant-font-size-table); white-space: nowrap; }
+th {
+  background: var(--ant-table-header-bg);
+  text-align: left;
+  padding: 7px 10px;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--ant-color-text-secondary);
+  border-bottom: 1px solid var(--ant-color-split);
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: var(--ant-z-sticky-header);
+}
+th.nosort { cursor: default; }
+td { padding: 6px 10px; border-bottom: 1px solid var(--ant-color-split); background: var(--ant-color-bg-container); }
+tbody tr:nth-child(even) td { background: var(--ant-table-stripe-bg); }
+tbody tr:hover td { background: var(--ant-table-row-hover); }
+tfoot td { font-weight: 600; background: var(--ant-table-header-bg); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+th .arr { color: var(--ant-primary); font-size: var(--ant-font-size-sm); }
+
+/* 旧粘性首列（.sticky1）：背景随行同步 + 右缘 1px 边界 */
+.sticky1 td:first-child, .sticky1 th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: var(--ant-z-sticky-col);
+}
+.sticky1 td:first-child { border-right: 1px solid var(--ant-color-split); }
+.sticky1 th:first-child { background: var(--ant-table-header-bg); z-index: 6; }
+.sticky1 tbody td:first-child { background: var(--ant-color-bg-container); }
+.sticky1 tbody tr:nth-child(even) td:first-child { background: var(--ant-table-stripe-bg); }
+.sticky1 tbody tr:hover td:first-child { background: var(--ant-table-row-hover); }
+
+/* 备件矩阵单元格（reportdb 专属语义：未备=辅助灰、已备=success 弱底，token 化） */
+.cell0 { color: var(--ant-color-text-tertiary); }
+.cell1 { color: var(--ant-color-text); background: var(--ant-success-bg); }
+
+/* ---- 21.8 状态色与徽章（旧 .ok/.bad/.badge/.b-*） ---- */
+.ok { color: var(--ant-success-text); font-weight: 600; }
+.bad { color: var(--ant-error-text); font-weight: 600; }
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 7px;
+  height: 22px;
+  line-height: 20px;
+  border-radius: var(--ant-radius-sm);
+  font-size: var(--ant-font-size-sm);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.b-warn { background: var(--ant-warning-bg); border-color: var(--ant-warning-border); color: var(--ant-warning-text); }
+.b-ok { background: var(--ant-success-bg); border-color: var(--ant-success-border); color: var(--ant-success-text); }
+
+/* ---- 21.9 链接卡片 / 分页条 ---- */
+.links { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: var(--ant-space-2); }
+.links a {
+  display: block;
+  padding: 10px 12px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-md);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+}
+.links a:hover { border-color: var(--ant-primary); text-decoration: none; }
+.links small { display: block; color: var(--ant-color-text-secondary); }
+
+.pager { display: flex; gap: var(--ant-space-2); align-items: center; flex-wrap: wrap; margin-top: 14px; }
+
+/* ---- 21.10 提示折叠（details.hint：summary 胶囊 28px 高，图标为本地 SVG data-URI） ---- */
+details.hint { margin: 6px 0 10px; font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); }
+details.hint > summary {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 10px;
+  min-height: 28px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-radius-pill);
+  background: var(--ant-color-bg-subtle);
+  color: var(--ant-color-text-secondary);
+  list-style: none;
+}
+details.hint > summary::-webkit-details-marker { display: none; }
+details.hint > summary::before {
+  content: '';
+  width: 13px;
+  height: 13px;
+  flex: none;
+  background: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='64 64 896 896'%3E%3Cpath fill='%238c8c8c' d='M512 64C264.6 64 64 264.6 64 512s200.6 448 448 448 448-200.6 448-448S759.4 64 512 64zm0 820c-205.4 0-372-166.6-372-372s166.6-372 372-372 372 166.6 372 372-166.6 372-372 372z'/%3E%3Cpath fill='%238c8c8c' d='M464 336a48 48 0 1096 0 48 48 0 10-96 0zm72 112h-48c-4.4 0-8 3.6-8 8v272c0 4.4 3.6 8 8 8h48c4.4 0 8-3.6 8-8V456c0-4.4-3.6-8-8-8z'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+details.hint[open] > summary { color: var(--ant-primary); border-color: var(--ant-primary); }
+details.hint > p {
+  margin-top: 6px;
+  padding: 8px 12px;
+  background: var(--ant-color-bg-subtle);
+  border-radius: var(--ant-radius-md);
+}
+
+/* ---- 21.11 只读预览横幅（保留 id 与表单，仅换 token 样式） ---- */
+#preview-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ant-space-1) var(--ant-space-3);
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  font-weight: 600;
+  font-size: var(--ant-font-size-table);
+  background: var(--ant-error-bg);
+  border-bottom: 1px solid var(--ant-error-border);
+  color: var(--ant-error-text);
+}
+#preview-banner form { display: inline; margin: 0; }
+#preview-banner .btn { min-height: 28px; }
+
+/* ---- 21.12 表单内的原生控件兜底（exemption/exclusion 新建页等内联 input） ---- */
+input[type="text"], input[type="password"], input[type="search"], input[type="date"], select { font-family: inherit; color: var(--ant-color-text); }
+
+/* ---- 21.13 移动端补充（旧 base 的 640px 规则并入 768px 体系） ---- */
+@media (max-width: 640px) {
+  .container { padding: var(--ant-space-4) var(--ant-space-4) 0; }
+  /* 顶栏内层与正文容器同左右内边距（16px），左右边缘对齐 */
+  .ant-header > .in, .topbar > .in { padding: 0 var(--ant-space-4); }
+  th, td { padding: 5px 8px; }
+  table { font-size: 12.5px; }
+  .card { padding: var(--ant-space-3); margin-bottom: var(--ant-space-3); }
+  .card h2 { font-size: 15px; }
+}
+
+/* ---- 21.14 移动端触控兜底（必须放在兼容层之后：旧 class 的 32px 定义会被
+          前面的规则按“后者优先”覆盖，这里统一收口到 44px 最小触控高度） ---- */
+@media (max-width: 768px) {
+  .ant-btn, .ant-btn-sm, .btn, .btn-sm, button:not(.burger),
+  .ant-input, .ant-select,
+  form.filters select, form.filters input,
+  input[type="text"], input[type="password"], input[type="search"],
+  input[type="date"], input[type="number"], select {
+    min-height: var(--ant-control-height-mobile);
+    height: auto;
+  }
+  .ant-chip { min-height: var(--ant-control-height-mobile); height: auto; }
+  .ant-check-hit { min-width: var(--ant-control-height-mobile); min-height: var(--ant-control-height-mobile); }
+  /* 复选框不参与 44px 最小高度（热区由包裹 label 撑开） */
+  input[type="checkbox"], input[type="radio"],
+  form.filters input[type="checkbox"] { min-height: 0; height: 16px; width: 16px; }
+  /* 每页/排序等筛选下拉与搜索框在卡片内 100% 宽 */
+  form.filters select, form.filters input[type="text"], form.filters input:not([type]) { width: 100%; }
+}
+
+/* ---- 21.15 极窄屏（<=360px）：容器与顶栏内层同步收紧到 12px。
+           必须放在兼容层（21.13 的 640px 规则）之后，否则会被按“后者优先”覆盖 ---- */
+@media (max-width: 360px) {
+  .container { padding: var(--ant-space-4) var(--ant-space-3) 0; }
+  .ant-header > .in, .topbar > .in { padding: 0 var(--ant-space-3); }
+  .ant-page-header-actions .ant-btn, .ant-page-header-actions .btn { flex: 1 1 100%; }
+}
+
+/* ---- 逐条提交（申请页每行自己的提交按钮 + 行内提示） ---- */
+.row-form { margin: 0; }
+.row-form .ant-btn { white-space: nowrap; }
+td.row-action { text-align: right; white-space: nowrap; }
+.row-msg { margin-top: var(--ant-space-1); font-size: var(--ant-font-size-sm, 12px); line-height: 1.5; }
+.row-msg-ok { color: var(--ant-success-text, #389e0d); }
+.row-msg-err { color: var(--ant-error-text, #cf1322); }
+
+/* 桌面：理由 + 操作两列固定在最右，宽表横向滚动时输入框和「提交申请」始终可见 */
+@media (min-width: 769px) {
+  table.sticky1 td.row-action, table.sticky1 th.row-action-h { position: sticky; right: 0; width: 112px; min-width: 112px; z-index: 3; background: var(--ant-color-bg-container, #fff); box-shadow: -1px 0 0 var(--ant-color-split, #f0f0f0); }
+  table.sticky1 td.row-reason, table.sticky1 th.row-reason-h { position: sticky; right: 112px; z-index: 3; background: var(--ant-color-bg-container, #fff); box-shadow: -1px 0 0 var(--ant-color-split, #f0f0f0); }
+  table.sticky1 th.row-action-h, table.sticky1 th.row-reason-h { z-index: 6; }
+}
+
+/* ==========================================================================
+   22. ant-spin（Ant Design Spin：四点指示器，颜色跟随 currentColor = 主色）
+   ========================================================================== */
+.ant-spin {
+  color: var(--ant-primary);
+  text-align: center;
+  vertical-align: middle;
+  line-height: 1;
+}
+.ant-spin-nested-loading { position: relative; }
+.ant-spin-nested-loading > .ant-spin {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: none;
+  width: 100%;
+  height: 100%;
+  max-height: 400px;
+}
+.ant-spin-nested-loading > .ant-spin.ant-spin-spinning { display: block; }
+.ant-spin-nested-loading > .ant-spin .ant-spin-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: -10px;
+}
+.ant-spin-nested-loading > .ant-spin .ant-spin-text {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  margin-top: 16px;
+  font-size: var(--ant-font-size-base);
+  color: var(--ant-primary);
+  text-shadow: 0 1px 2px #fff;
+}
+.ant-spin-container { position: relative; transition: opacity .3s; }
+.ant-spin-blur {
+  opacity: .5;
+  user-select: none;
+  pointer-events: none;
+}
+.ant-spin-dot {
+  position: relative;
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  font-size: 20px;
+}
+.ant-spin-dot-item {
+  position: absolute;
+  display: block;
+  width: 9px;
+  height: 9px;
+  background: currentColor;
+  border-radius: 100%;
+  transform: scale(.75);
+  transform-origin: 50% 50%;
+  opacity: .3;
+  animation: antSpinMove 1s infinite linear alternate;
+}
+.ant-spin-dot-item:nth-child(1) { top: 0; left: 0; }
+.ant-spin-dot-item:nth-child(2) { top: 0; right: 0; animation-delay: .4s; }
+.ant-spin-dot-item:nth-child(3) { right: 0; bottom: 0; animation-delay: .8s; }
+.ant-spin-dot-item:nth-child(4) { bottom: 0; left: 0; animation-delay: 1.2s; }
+.ant-spin-dot-spin {
+  transform: rotate(45deg);
+  animation: antRotate 1.2s infinite linear;
+}
+.ant-spin-sm .ant-spin-dot { width: 14px; height: 14px; font-size: 14px; }
+.ant-spin-sm .ant-spin-dot-item { width: 6px; height: 6px; }
+.ant-page-header-meta .ant-spin {
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: -2px;
+}
+.ant-spin[hidden] { display: none !important; }
+@keyframes antSpinMove { to { opacity: 1; } }
+@keyframes antRotate { to { transform: rotate(405deg); } }
+
+/* ==========================================================================
+   23. ant-message（顶部轻提示。短结果用 message，不另做自定义动效库）
+   ========================================================================== */
+.ant-message {
+  position: fixed;
+  top: 8px;
+  left: 0;
+  right: 0;
+  z-index: var(--ant-z-message);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+}
+.ant-message-notice {
+  padding: 8px;
+  text-align: center;
+  animation: antMessageMoveIn .3s cubic-bezier(.78, .14, .15, .86);
+}
+.ant-message-notice-leave {
+  animation: antMessageMoveOut .2s cubic-bezier(.78, .14, .15, .86) forwards;
+}
+.ant-message-notice-content {
+  display: inline-block;
+  max-width: min(480px, calc(100vw - 32px));
+  padding: 9px 12px;
+  background: #fff;
+  border-radius: var(--ant-radius-lg);
+  box-shadow: var(--ant-shadow-dropdown);
+  pointer-events: all;
+  text-align: left;
+}
+.ant-message-custom-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: var(--ant-font-size-base);
+  line-height: 1.5714;
+  color: var(--ant-color-text);
+}
+.ant-message-custom-content .ai,
+.ant-message-custom-content .anticon-spin { font-size: 16px; margin-top: 3px; }
+.ant-message-success .ai { color: var(--ant-success); }
+.ant-message-error .ai { color: var(--ant-error); }
+.ant-message-warning .ai { color: var(--ant-warning); }
+.ant-message-info .ai,
+.ant-message-loading .anticon-spin { color: var(--ant-primary); }
+.ant-message-text { min-width: 0; }
+@keyframes antMessageMoveIn {
+  0% { transform: translateY(-100%); opacity: 0; }
+  100% { transform: translateY(0); opacity: 1; }
+}
+@keyframes antMessageMoveOut {
+  0% { opacity: 1; max-height: 150px; }
+  100% { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+}
+
+/* ==========================================================================
+   24. ant-progress / ant-upload-list（线形进度，主色；成功绿、失败红）
+    --------------------------------------------------------------------------
+    自 NSS 控制台版本回收入设计系统（唯一事实来源），标记结构不变。
+    ========================================================================== */
+.ant-progress-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: var(--ant-font-size-base);
+  line-height: 1;
+}
+.ant-progress-outer { flex: 1; min-width: 0; }
+.ant-progress-inner {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 8px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, .06);
+  border-radius: 100px;
+}
+.ant-progress-bg {
+  position: relative;
+  height: 8px;
+  background: var(--ant-primary);
+  border-radius: 100px;
+  transition: width .2s linear;
+}
+.ant-progress-status-success .ant-progress-bg { background: var(--ant-success); }
+.ant-progress-status-exception .ant-progress-bg { background: var(--ant-error); }
+.ant-progress-text {
+  flex: none;
+  width: 3.4em;
+  font-size: var(--ant-font-size-sm);
+  color: var(--ant-color-text-secondary);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.ant-progress-status-active .ant-progress-bg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  border-radius: 100px;
+  opacity: 0;
+  animation: antProgressActive 2.4s cubic-bezier(.23, 1, .32, 1) infinite;
+}
+@keyframes antProgressActive {
+  0% { transform: translateX(-100%) scaleX(0); opacity: .1; }
+  20% { transform: translateX(-100%) scaleX(0); opacity: .5; }
+  100% { transform: translateX(0) scaleX(1); opacity: 0; }
+}
+.ant-upload-list { margin-top: 8px; }
+.ant-upload-list[hidden] { display: none; }
+.ant-upload-list-item-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ant-color-text);
+  font-size: var(--ant-font-size-base);
+}
+.ant-upload-list-item-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   25. ant-notification（右上角白卡片轻提示，z-index 1050）
+    ========================================================================== */
+@keyframes antNotificationIn {
+  0% { opacity: 0; transform: translateX(16px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+@keyframes antNotificationOut {
+  to { opacity: 0; transform: translateX(8px); }
+}
+.ant-notification {
+  position: fixed;
+  top: 24px;
+  right: 24px;
+  z-index: 1050;
+  width: 384px;
+  max-width: calc(100vw - 32px);
+  pointer-events: none;
+}
+.ant-notification-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 16px 24px;
+  background: #fff;
+  border-radius: var(--ant-radius-lg);
+  box-shadow: var(--ant-shadow-dropdown);
+  pointer-events: auto;
+  animation: antNotificationIn .24s ease;
+}
+.ant-notification-notice-leave { animation: antNotificationOut .2s ease forwards; }
+.ant-notification-notice-icon { display: inline-flex; font-size: 24px; line-height: 1; }
+.ant-notification-notice-icon .ai { width: 24px; height: 24px; }
+.ant-notification-notice-content { flex: 1; min-width: 0; }
+.ant-notification-notice-message {
+  margin-bottom: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--ant-color-text);
+}
+.ant-notification-notice-description {
+  font-size: var(--ant-font-size-base);
+  line-height: 1.5714;
+  color: var(--ant-color-text);
+  overflow-wrap: anywhere;
+}
+.ant-notification-notice-close {
+  flex: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ant-color-text-tertiary);
+  line-height: 1;
+  font-size: 14px;
+  cursor: pointer;
+}
+.ant-notification-notice-close:hover { color: var(--ant-color-text); }
+.ant-notification-notice-close .ai { width: 14px; height: 14px; }
+@media (max-width: 768px) {
+  .ant-notification { top: 16px; right: 16px; left: 16px; width: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anticon-spin, .ant-spin-dot-spin, .ant-spin-dot-item, .ant-message-notice, .ant-message-notice-leave,
+  .ant-progress-status-active .ant-progress-bg::before,
+  .ant-notification-notice, .ant-notification-notice-leave {
+    animation: none;
+  }
+  .menu, .ant-menu,
+  .topbar::before, .ant-header::before, .nav-backdrop,
+  .burger::before, .burger::after,
+  [data-burger]::before, [data-burger]::after,
+  .hub-user .dd, .hub-user::before,
+  .hub-user > button::before, .hub-user > button::after,
+  .ant-header.has-burger > .in > nav,
+  .topbar.has-burger > .in > nav {
+    transition: none !important;
+  }
+}
+
+/* 26. 统一交互（INTERACTION.md）：只折叠明细，统计/主操作不进入面板。 */
+.ds-collapse { min-width: 0; margin: 12px 0; border: 1px solid #f0f0f0; border-radius: 8px; background: #fff; }
+.ds-collapse > .ds-collapse-toggle {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px;
+  padding: 10px 14px; border: 0; border-radius: 8px; background: #fafafa;
+  color: rgba(0,0,0,.88); font: inherit; font-weight: 600; text-align: left; cursor: pointer;
+}
+.ds-collapse-toggle:hover { background: #e6f4ff; }
+.ds-collapse-count { color: rgba(0,0,0,.65); font-weight: 400; }
+.ds-collapse-arrow { margin-left: auto; flex: none; transition: transform .2s; }
+.ds-collapse-toggle[aria-expanded="true"] .ds-collapse-arrow,
+details[open] > summary > .ds-collapse-arrow { transform: rotate(180deg); }
+.ds-collapse-panel { min-width: 0; padding: 12px; }
+.ds-collapse-panel[hidden], .ds-close[hidden] { display: none !important; }
+.ds-filter-summary { min-width: 0; font-size: 12px; color: rgba(0,0,0,.65); font-weight: 400; overflow-wrap: anywhere; }
+.ds-filter > .ds-collapse-toggle { display: none; }
+.ds-filter { border: 0; background: transparent; }
+.ds-filter > .ds-collapse-panel { padding: 0; }
+.ds-native-summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
+.ds-native-summary::-webkit-details-marker { display: none; }
+details > .ds-native-summary::before, details > .ds-native-summary::after,
+.ds-native-summary > .ant-collapse-arrow { display: none !important; }
+.ds-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ds-title-row > h1, .ds-title-row > h2 { min-width: 0; margin-bottom: 0 !important; }
+a.ds-back { display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex: none; min-height: 32px; padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: #1677ff; font-size: 14px; text-decoration: none; }
+a.ds-back:hover { border-color: #1677ff; background: #e6f4ff; }
+/* !important 保证应用旧的图标按钮尺寸不覆盖公共热区。保留 hidden 语义。 */
+.ds-close:not([hidden]), .ant-notification-notice-close:not([hidden]) {
+  display: inline-flex !important; align-items: center; justify-content: center;
+  width: 32px !important; height: 32px !important; min-width: 32px !important; min-height: 32px !important;
+  padding: 0 !important; flex: none; border: 0; border-radius: 6px; background: transparent;
+  color: rgba(0,0,0,.65); cursor: pointer; line-height: 1; font-size: 16px;
+}
+.ds-close .ai, .ant-notification-notice-close .ai { width: 16px !important; height: 16px !important; }
+.ds-close:hover, .ant-notification-notice-close:hover { background: #f5f5f5 !important; color: rgba(0,0,0,.88); }
+.ds-collapse-toggle:focus-visible, .ds-close:focus-visible, .ds-back:focus-visible,
+.ds-native-summary:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
+.ds-link-icon { width: 14px; height: 14px; margin-left: 4px; vertical-align: -.15em; flex: none; }
+a.ds-page-link { cursor: pointer; }
+a.ds-page-link:hover { text-decoration: underline; }
+td:has(> a.ds-page-link):hover { background: #e6f4ff; }
+[data-sd-events][role="button"], [data-sd-members], .sd-link { cursor: pointer; }
+[data-sd-events][role="button"]:hover, [data-sd-members]:hover, .sd-link:hover { background: #e6f4ff; }
+.sd-link { text-decoration: underline; text-underline-offset: 3px; }
+.ds-cell-action, .theater-row { cursor: pointer !important; }
+.ds-cell-action:hover, .ds-cell-action:focus-visible, .theater-row:hover td { background: #e6f4ff !important; }
+.ds-cell-action, .theater-row td:first-child { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+.ds-cell-action:focus-visible, .theater-row:focus-visible { outline: 2px solid #1677ff; outline-offset: -2px; }
+@media (max-width: 860px) {
+  .ds-filter { border: 1px solid #f0f0f0; background: #fff; }
+  .ds-filter > .ds-collapse-toggle { display: flex; flex-wrap: wrap; }
+  .ds-filter > .ds-collapse-panel { padding: 12px; }
+  .ds-filter-summary { flex: 1 1 130px; }
+  .ds-close:not([hidden]), .ant-notification-notice-close:not([hidden]) {
+    width: 40px !important; height: 40px !important; min-width: 40px !important; min-height: 40px !important;
+  }
+  a.ds-back { min-width: 40px; min-height: 40px; }
+  .ds-title-row { align-items: flex-start; }
+  .burger, [data-burger], .nav-toggle, .hub-user { order: 999; margin-left: auto; }
+}
+@media (max-width: 768px) {
+  .ant-table-cards td[colspan][data-label]:not([data-card-title])::before {
+    content: attr(data-label) !important; display: block; color: rgba(0,0,0,.65); font-size: 12px;
+  }
+}
+@media print {
+  .ds-collapse-panel[hidden] { display: block !important; }
+  .ds-collapse-toggle, .ds-back { display: none !important; }
+}
+@media (prefers-reduced-motion: reduce) { .ds-collapse-arrow { transition: none; } }

@@ -9,9 +9,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/static/brand/icon-32.png">
   <link rel="apple-touch-icon" sizes="180x180" href="/static/brand/icon-180.png">
   <meta name="theme-color" content="#1677ff">
+  <style>{{ ds_css()|safe }}</style>
   <style>
     :root {
-      --blue: #3370ff;
+      --blue: #1677ff;
       --orange: #ff8800;
       --red: #f5222d;
       --yellow: #fadb14;
@@ -125,8 +126,8 @@
       .nav h1 { flex: 1 1 auto; min-width: 0; font-size: 15px; gap: 8px; }
       .nav .brand-logo { height: 22px; }
       .nav-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .nav-toggle { order: 2; }
-      .nav-mode { order: 3; flex: 1 0 100%; margin-left: 0; font-size: 12px; white-space: nowrap; }
+      .nav-toggle { order: 999; margin-left: auto; }
+      .nav-mode { order: 1; display: none; }
       .nav-toggle,
       .nav-overlay,
       .nav-drawer-head { display: flex; }
@@ -244,12 +245,13 @@
   </style>
 </head>
 <body>
+  {{ ds_sprite()|safe }}
   <nav class="nav" aria-label="主导航">
     <h1><img class="brand-logo" src="/static/brand/logo-blue.png" srcset="/static/brand/logo-blue@2x.png 2x" alt="猛士" height="28"><span class="nav-title-text">事故车提醒系统</span></h1>
     <div class="nav-links" id="nav-drawer" aria-label="导航菜单">
       <div class="nav-drawer-head">
         <span class="nav-drawer-title">导航菜单</span>
-        <button type="button" class="nav-drawer-close" id="nav-drawer-close">关闭</button>
+        <button type="button" class="nav-drawer-close ds-close" id="nav-drawer-close" aria-label="关闭"><svg class="ai" aria-hidden="true"><use href="#i-close"/></svg></button>
       </div>
       <a href="/" class="{{ 'cur' if request.path == '/' }}" {% if request.path == '/' %}aria-current="page"{% endif %}>仪表盘</a>
       <a href="/mode" class="{{ 'cur' if request.path.startswith('/mode') }}" {% if request.path.startswith('/mode') %}aria-current="page"{% endif %}>模式切换</a>
@@ -301,7 +303,7 @@
       }
     </style>
   </noscript>
-  <div class="container">
+  <div class="container"{% if request.path != '/' %} data-ds-back="{{ '/rules' if request.path.startswith('/rules/edit/') else '/' }}"{% endif %}>
     {% block content %}{% endblock %}
   </div>
   <footer>猛士科技 服务运营 — 事故车维修超期提醒系统</footer>
@@ -397,5 +399,6 @@
     })();
   </script>
   {% block scripts %}{% endblock %}
+  <script>{{ ds_cards()|safe }}</script>
 </body>
 </html>

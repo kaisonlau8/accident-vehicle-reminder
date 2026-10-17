@@ -81,6 +81,20 @@ app = Flask(
     static_folder=str(PLUGIN_ROOT / "static"),
 )
 
+# 本地设计系统副本由工作区 design-system/sync.sh 同步。
+_DS_DIR = PLUGIN_ROOT / "static" / "ds"
+_ds_cache: dict[str, str] = {}
+
+
+def _ds_asset(name: str) -> str:
+    if name not in _ds_cache:
+        _ds_cache[name] = (_DS_DIR / name).read_text(encoding="utf-8")
+    return _ds_cache[name]
+
+
+for _key, _file in (("ds_css", "antd-lite.css"), ("ds_cards", "cards.js"), ("ds_sprite", "sprite.svg")):
+    app.jinja_env.globals[_key] = lambda name=_file: _ds_asset(name)
+
 
 @app.context_processor
 def _inject_global_template_vars():
