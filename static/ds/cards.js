@@ -185,7 +185,8 @@
   }
   function longTables() {
     [].forEach.call(document.querySelectorAll('table'), function (t) {
-      if (t.closest('details,.ds-collapse,[data-ds-summary]') || rows(t) <= 8) return;
+      // 列表页的主体表格（模板标 data-ds-primary）和编辑表单里的表格不自动折叠。
+      if (t.closest('details,.ds-collapse,[data-ds-summary],[data-ds-primary]') || t.closest('form[method="post" i]') || rows(t) <= 8) return;
       var wrap = t.closest('.tw,.ant-table-wrap,.sheet,.store-table-wrapper,.freeze-wrap,.table-scroll') || t;
       var card = wrap.closest('.card,.ant-card,.stat-block,section');
       var heading = card && card.querySelector('h2,h3');
@@ -223,7 +224,7 @@
   function links() {
     [].forEach.call(document.querySelectorAll('a[href]'), function (a) {
       var raw = a.getAttribute('href'), u;
-      if (!raw || raw[0] === '#' || a.closest('.brand') || a.classList.contains('brand') || a.classList.contains('ds-back') || a.hasAttribute('download') || a.dataset.dsLink === 'off') return;
+      if (!raw || raw[0] === '#' || a.closest('nav,header,.topbar,.ant-header,.ant-menu,.menu,.nav-links,.ant-dropdown-menu,.hub-user,.ant-breadcrumb') || a.closest('.brand') || a.classList.contains('brand') || a.classList.contains('ds-back') || a.hasAttribute('download') || a.dataset.dsLink === 'off') return;
       try { u = new URL(a.href); } catch (e) { return; }
       if (!/^https?:$/.test(u.protocol) || /logout|\/_auth\/|\/auth\//.test(u.pathname)) return;
       if (/\.(xlsx?|csv|zip|pdf|png)$/.test(u.pathname) || /\/export|\/download|\/api\/report\/latest/.test(u.pathname)) return;
