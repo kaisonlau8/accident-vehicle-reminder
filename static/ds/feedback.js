@@ -176,11 +176,16 @@
     closeIcon.setAttribute('class', 'ai');
     closeIcon.querySelector('use').setAttribute('href', '#i-close');
     close.appendChild(closeIcon);
-    close.addEventListener('click', function () { notice.remove(); });
+    function removeNotice() {
+      if (!notice.isConnected || notice.classList.contains('ant-notification-notice-leave')) return;
+      notice.classList.add('ant-notification-notice-leave');
+      setTimeout(function () { notice.remove(); }, 200);
+    }
+    close.addEventListener('click', removeNotice);
     notice.appendChild(close);
     holder.appendChild(notice);
-    if (opts.duration !== 0) setTimeout(function () { notice.remove(); }, opts.duration || 4500);
-    return { close: function () { notice.remove(); } };
+    if (opts.duration !== 0) setTimeout(removeNotice, opts.duration || 4500);
+    return { close: removeNotice };
   }
 
   function flash(type, text) {

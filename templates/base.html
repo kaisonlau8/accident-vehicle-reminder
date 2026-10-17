@@ -303,7 +303,7 @@
       }
     </style>
   </noscript>
-  <div class="container"{% if request.path != '/' %} data-ds-back="{{ '/rules' if request.path.startswith('/rules/edit/') else '/' }}"{% endif %}>
+  <div class="container"{% if request.path != '/' %} data-ds-back="{{ '/rules' if request.path.startswith('/rules/edit/') else '/' }}" data-ds-back-label="{{ '规则管理' if request.path.startswith('/rules/edit/') else '首页' }}"{% endif %}>
     {% block content %}{% endblock %}
   </div>
   <footer>猛士科技 服务运营 — 事故车维修超期提醒系统</footer>

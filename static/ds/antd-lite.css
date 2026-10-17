@@ -120,6 +120,13 @@
   /* ---- 顶栏 ---- */
   --ant-header-height: 46px;   /* antd 水平导航高度 + 底部 1px 分割 */
 
+  /* ---- 动效（只动画 transform/opacity；高度动画一次性测量） ---- */
+  --ds-motion-fast: .1s;
+  --ds-motion-mid: .2s;
+  --ds-motion-slow: .3s;
+  --ds-motion-ease: cubic-bezier(.23, 1, .32, 1); /* antd motion-ease-out-quint */
+  --ds-motion-ease-soft: cubic-bezier(.215, .61, .355, 1);
+
   /* ---- 旧系统变量别名（_home_css.html / 少量内联样式仍引用，逐页迁移后移除） ---- */
   --blue: var(--ant-primary);
   --orange: var(--ant-brand);
@@ -137,7 +144,10 @@
    ========================================================================== */
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-html { -webkit-text-size-adjust: 100%; }
+html {
+  -webkit-text-size-adjust: 100%;
+  scroll-behavior: smooth;
+}
 
 body {
   font-family: var(--ant-font-family);
@@ -793,6 +803,129 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   margin-left: auto;
 }
 .ant-page-header-actions .ant-input, .ant-page-header-actions select { width: auto; }
+
+/* ---- 5.1 面包屑（桌面二级页；当前页 .88，上级 .45，分隔符 “/”） ---- */
+.ant-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  margin: 0 0 6px;
+  font-size: var(--ant-font-size-table);
+  line-height: 1.5;
+  color: var(--ant-color-text-tertiary);
+}
+.ant-breadcrumb a {
+  color: var(--ant-color-text-tertiary);
+  text-decoration: none;
+}
+.ant-breadcrumb a:hover { color: var(--ant-primary); text-decoration: none; }
+.ant-breadcrumb-separator { color: var(--ant-color-text-tertiary); }
+.ant-breadcrumb-current {
+  color: var(--ant-color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- 5.2 移动端 App 式子页标题栏（固定于顶栏下方，44px；返回 44×44） ----
+   常驻 44px 的占位由 .container 的 padding-top 预留（见第 26 节），避免插入时布局偏移。 */
+.ds-subbar { display: none; }
+@media (max-width: 860px) {
+  .ant-breadcrumb { display: none; }
+  /* JS 折叠筛选前先隐藏，避免首帧展开后收起造成 CLS；filters() 包装后加 ready。 */
+  form.ant-filter-bar:not(.ds-filter-ready),
+  .timeout-filters:not(.ds-filter-ready),
+  [data-ds-filter]:not(.ds-filter-ready) {
+    display: block !important;
+    height: 58.4px !important;
+    min-height: 58.4px !important;
+    margin: 12px 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    background: #fff;
+  }
+  @media (scripting: none) {
+    form.ant-filter-bar:not(.ds-filter-ready),
+    .timeout-filters:not(.ds-filter-ready),
+    [data-ds-filter]:not(.ds-filter-ready) {
+      display: revert !important;
+      height: auto !important;
+      min-height: 0 !important;
+      visibility: visible !important;
+    }
+  }
+  .ds-subbar {
+    display: flex;
+    position: fixed;
+    top: var(--ds-header-h, var(--ant-header-height));
+    left: 0;
+    right: 0;
+    z-index: 95;
+    align-items: center;
+    gap: 2px;
+    height: 44px;
+    padding: 0 6px 0 2px;
+    background: var(--ant-color-bg-container);
+    border-bottom: 1px solid var(--ant-color-split);
+  }
+  .ds-subbar-back {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 44px;
+    height: 44px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--ant-radius-md);
+    background: transparent;
+    color: var(--ant-color-text);
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .ds-subbar-back:hover { background: rgba(0, 0, 0, .04); }
+  .ds-subbar-back:active { background: rgba(0, 0, 0, .08); }
+  .ds-subbar-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--ant-color-text);
+  }
+  .ds-subbar-title { margin: 0; }
+  body:has([data-ds-back]) .ant-page-header h1,
+  body:has([data-ds-back]) .container > h1,
+  body:has([data-ds-back]) .container > h2 { display: none; }
+  body:has([data-ds-back]) .container:not(:has(> .ant-header, > .topbar, > .nav)) { padding-top: 44px; }
+}
+
+/* 桌面面包屑绝对定位在标题上方，避免插入时推移内容（CLS）。 */
+@media (min-width: 861px) {
+  body:has([data-ds-back]) .container { position: relative; }
+  body:has([data-ds-back]) .ant-page-header .ant-page-header-heading { position: relative; }
+  body:has([data-ds-back]) .ant-breadcrumb[data-ds-auto] {
+    position: absolute;
+    top: -22px;
+    left: 0;
+    right: 0;
+    margin: 0;
+  }
+  body:has([data-ds-back]) .container[data-ds-back]:not(:has(> .ant-page-header)) { padding-top: 30px; }
+  body:has([data-ds-back]) .container > .ant-breadcrumb[data-ds-auto] {
+    top: 0;
+    left: var(--ant-space-4);
+    right: var(--ant-space-4);
+  }
+}
 
 /* ==========================================================================
    6. ant-card（白底 / 1px 边框 / radius 8 / 卡片阴影；head 56px 16/600 + 分割线）
@@ -2005,10 +2138,10 @@ td.row-action { text-align: right; white-space: nowrap; }
 .ant-message-notice {
   padding: 8px;
   text-align: center;
-  animation: antMessageMoveIn .3s cubic-bezier(.78, .14, .15, .86);
+  animation: antMessageMoveIn var(--ds-motion-mid) var(--ds-motion-ease);
 }
 .ant-message-notice-leave {
-  animation: antMessageMoveOut .2s cubic-bezier(.78, .14, .15, .86) forwards;
+  animation: antMessageMoveOut var(--ds-motion-mid) ease-in forwards;
 }
 .ant-message-notice-content {
   display: inline-block;
@@ -2041,8 +2174,8 @@ td.row-action { text-align: right; white-space: nowrap; }
   100% { transform: translateY(0); opacity: 1; }
 }
 @keyframes antMessageMoveOut {
-  0% { opacity: 1; max-height: 150px; }
-  100% { opacity: 0; max-height: 0; padding-top: 0; padding-bottom: 0; }
+  0% { opacity: 1; transform: translateY(0); max-height: 150px; }
+  100% { opacity: 0; transform: translateY(-100%); max-height: 0; padding-top: 0; padding-bottom: 0; }
 }
 
 /* ==========================================================================
@@ -2144,9 +2277,9 @@ td.row-action { text-align: right; white-space: nowrap; }
   border-radius: var(--ant-radius-lg);
   box-shadow: var(--ant-shadow-dropdown);
   pointer-events: auto;
-  animation: antNotificationIn .24s ease;
+  animation: antNotificationIn var(--ds-motion-mid) var(--ds-motion-ease);
 }
-.ant-notification-notice-leave { animation: antNotificationOut .2s ease forwards; }
+.ant-notification-notice-leave { animation: antNotificationOut var(--ds-motion-mid) ease-in forwards; }
 .ant-notification-notice-icon { display: inline-flex; font-size: 24px; line-height: 1; }
 .ant-notification-notice-icon .ai { width: 24px; height: 24px; }
 .ant-notification-notice-content { flex: 1; min-width: 0; }
@@ -2198,8 +2331,125 @@ td.row-action { text-align: right; white-space: nowrap; }
   }
 }
 
+/* ==========================================================================
+   26. 动效与统一交互（INTERACTION.md）
+   --------------------------------------------------------------------------
+   · 页面切换：同源跨文档 View Transitions（Chromium）+ 不支持时首帧淡入
+   · 折叠：WAAPI 一次性高度动画；抽屉/弹窗 transform/opacity
+   · 列表 stagger、按钮按压、骨架屏、顶栏滚动阴影
+   · 全部动效在 prefers-reduced-motion 下关闭
+   ========================================================================== */
+
+/* ---- 26.1 页面切换 ---- */
+@view-transition { navigation: auto; }
+@keyframes dsVtOut {
+  to { opacity: 0; transform: translateY(-8px); }
+}
+@keyframes dsVtIn {
+  from { opacity: 0; transform: translateY(8px); }
+}
+::view-transition-old(root) {
+  animation: dsVtOut var(--ds-motion-mid) ease-out both;
+}
+::view-transition-new(root) {
+  animation: dsVtIn var(--ds-motion-mid) var(--ds-motion-ease) both;
+}
+@keyframes dsPageIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+.ds-page-enter { animation: dsPageIn 220ms var(--ds-motion-ease) both; }
+
+/* ---- 26.2 骨架屏（异步 fetch 容器；数据到达后由 cards.js 移除） ---- */
+@keyframes dsSkeletonShimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
+.ds-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--ant-radius-sm);
+  background-color: #f5f5f5;
+  background-image: linear-gradient(90deg, #f2f2f2 25%, #e8e8e8 37%, #f2f2f2 63%);
+  background-size: 400% 100%;
+  animation: dsSkeletonShimmer 1.4s ease infinite;
+}
+.ds-skeleton > * { visibility: hidden; }
+.ds-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: transparent;
+}
+.ds-skeleton-block {
+  height: 14px;
+  border-radius: var(--ant-radius-sm);
+  background-color: #f5f5f5;
+  background-image: linear-gradient(90deg, #f2f2f2 25%, #e8e8e8 37%, #f2f2f2 63%);
+  background-size: 400% 100%;
+  animation: dsSkeletonShimmer 1.4s ease infinite;
+}
+
+/* ---- 26.3 列表 stagger（仅首次渲染；JS 给前 20 项加类与延迟） ---- */
+@keyframes dsStaggerIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.ds-stagger-item { animation: dsStaggerIn 260ms var(--ds-motion-ease) both; }
+
+/* ---- 26.4 按钮按压（100ms；汉堡/顶栏开关不参与） ---- */
+.ant-btn, .btn, .filter-btn, .export-link, button.ant-btn {
+  transition: transform var(--ds-motion-fast) ease-out, background-color var(--ds-motion-fast) ease-out,
+              border-color var(--ds-motion-fast) ease-out, color var(--ds-motion-fast) ease-out;
+}
+.ant-btn:active:not(:disabled):not([disabled]),
+.btn:active:not(:disabled):not([disabled]),
+button.ant-btn:active:not(:disabled):not([disabled]),
+.filter-btn:active:not(:disabled),
+.export-link:active { transform: scale(.97); }
+
+/* ---- 26.5 抽屉 / 弹窗通用（页面自有组件也复用同一缓动） ---- */
+.ant-drawer-mask, .ant-modal-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, .45);
+  opacity: 0;
+  transition: opacity var(--ds-motion-mid) ease;
+}
+.ant-drawer-mask.is-open, .ant-modal-mask.is-open { opacity: 1; }
+.ant-drawer-content {
+  transition: transform 250ms var(--ds-motion-ease);
+  transform: translateX(100%);
+}
+.ant-drawer.is-open .ant-drawer-content { transform: none; }
+.ant-modal {
+  opacity: 0;
+  transform: scale(.96);
+  transition: opacity var(--ds-motion-mid) ease, transform var(--ds-motion-mid) var(--ds-motion-ease);
+}
+.ant-modal.is-open { opacity: 1; transform: none; }
+
+/* ---- 26.6 顶栏滚动阴影 ---- */
+.ant-header, .topbar, .nav {
+  transition: box-shadow var(--ds-motion-mid) ease-out;
+}
+.ant-header.ds-scrolled, .topbar.ds-scrolled, .nav.ds-scrolled {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .08);
+}
+
 /* 26. 统一交互（INTERACTION.md）：只折叠明细，统计/主操作不进入面板。 */
 .ds-collapse { min-width: 0; margin: 12px 0; border: 1px solid #f0f0f0; border-radius: 8px; background: #fff; }
+/* JS 接管前先隐藏明细内容，避免首帧“先展开后折叠”造成布局偏移；cards.js 初始化后加 ready。
+   无脚本时由 <noscript> 的覆盖规则恢复（见各 base 模板的 noscript 样式）。 */
+.ds-collapse:not(.ds-collapse-ready):not(.ds-filter) > :not(.ds-collapse-toggle) { display: none !important; }
+.ds-collapse:not(.ds-collapse-ready):not(.ds-filter)::before {
+  content: ""; display: block; height: 44px; border-radius: var(--ant-radius-lg) var(--ant-radius-lg) 0 0;
+  background: var(--ant-color-bg-subtle);
+}
+@media (scripting: none) {
+  .ds-collapse:not(.ds-collapse-ready):not(.ds-filter) > :not(.ds-collapse-toggle) { display: revert !important; }
+  .ds-collapse:not(.ds-collapse-ready):not(.ds-filter)::before { content: none; }
+}
 .ds-collapse > .ds-collapse-toggle {
   display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px;
   padding: 10px 14px; border: 0; border-radius: 8px; background: #fafafa;
@@ -2215,15 +2465,13 @@ details[open] > summary > .ds-collapse-arrow { transform: rotate(180deg); }
 .ds-filter-summary { min-width: 0; font-size: 12px; color: rgba(0,0,0,.65); font-weight: 400; overflow-wrap: anywhere; }
 .ds-filter > .ds-collapse-toggle { display: none; }
 .ds-filter { border: 0; background: transparent; }
+@media (min-width: 861px) { .ds-filter { margin: 0; } }
 .ds-filter > .ds-collapse-panel { padding: 0; }
 .ds-native-summary { display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none; }
 .ds-native-summary::-webkit-details-marker { display: none; }
 details > .ds-native-summary::before, details > .ds-native-summary::after,
 .ds-native-summary > .ant-collapse-arrow { display: none !important; }
-.ds-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.ds-title-row > h1, .ds-title-row > h2 { min-width: 0; margin-bottom: 0 !important; }
-a.ds-back { display: inline-flex; align-items: center; justify-content: center; gap: 4px; flex: none; min-height: 32px; padding: 4px 8px; border: 1px solid #d9d9d9; border-radius: 6px; background: #fff; color: #1677ff; font-size: 14px; text-decoration: none; }
-a.ds-back:hover { border-color: #1677ff; background: #e6f4ff; }
+.ds-collapse-panel { will-change: auto; }
 /* !important 保证应用旧的图标按钮尺寸不覆盖公共热区。保留 hidden 语义。 */
 .ds-close:not([hidden]), .ant-notification-notice-close:not([hidden]) {
   display: inline-flex !important; align-items: center; justify-content: center;
@@ -2233,7 +2481,7 @@ a.ds-back:hover { border-color: #1677ff; background: #e6f4ff; }
 }
 .ds-close .ai, .ant-notification-notice-close .ai { width: 16px !important; height: 16px !important; }
 .ds-close:hover, .ant-notification-notice-close:hover { background: #f5f5f5 !important; color: rgba(0,0,0,.88); }
-.ds-collapse-toggle:focus-visible, .ds-close:focus-visible, .ds-back:focus-visible,
+.ds-collapse-toggle:focus-visible, .ds-close:focus-visible,
 .ds-native-summary:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
 .ds-link-icon { width: 14px; height: 14px; margin-left: 4px; vertical-align: -.15em; flex: none; }
 a.ds-page-link { cursor: pointer; }
@@ -2254,8 +2502,6 @@ td:has(> a.ds-page-link):hover { background: #e6f4ff; }
   .ds-close:not([hidden]), .ant-notification-notice-close:not([hidden]) {
     width: 40px !important; height: 40px !important; min-width: 40px !important; min-height: 40px !important;
   }
-  a.ds-back { min-width: 40px; min-height: 40px; }
-  .ds-title-row { align-items: flex-start; }
   .burger, [data-burger], .nav-toggle, .hub-user { order: 999; margin-left: auto; }
 }
 @media (max-width: 768px) {
@@ -2265,6 +2511,14 @@ td:has(> a.ds-page-link):hover { background: #e6f4ff; }
 }
 @media print {
   .ds-collapse-panel[hidden] { display: block !important; }
-  .ds-collapse-toggle, .ds-back { display: none !important; }
+  .ds-collapse-toggle { display: none !important; }
 }
-@media (prefers-reduced-motion: reduce) { .ds-collapse-arrow { transition: none; } }
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .ds-collapse-arrow,
+  .ant-header, .topbar, .nav,
+  .ant-btn, .btn, .filter-btn, .export-link, button.ant-btn { transition: none !important; }
+  .ds-page-enter, .ds-stagger-item, .ds-skeleton, .ds-skeleton-block { animation: none !important; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+  .ds-subbar-back:active { background: transparent; }
+}
