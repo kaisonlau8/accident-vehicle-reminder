@@ -109,7 +109,7 @@
       }, label));
     }
 
-    render();
+    ReactDOM.flushSync(render);
     return api;
   }
 
