@@ -63,13 +63,16 @@
   <h2>浏览器管理</h2>
   <div id="browser-detail" style="margin-bottom:12px;">
     {% if browser %}
+    <div class="ds-collapse" data-ds-title="浏览器属性">
     <table style="width:auto;">
+      <thead><tr><th>属性</th><th>内容</th></tr></thead>
       <tr><td style="width:100px;">浏览器</td><td>{{ Path(browser.browserExecutable).stem if browser.browserExecutable else '未知' }}</td></tr>
       <tr><td>PID</td><td>{{ browser.pid }}</td></tr>
       <tr><td>CDP端口</td><td>{{ browser.port }}</td></tr>
       <tr><td>启动时间</td><td>{{ browser.startedAt or '未知' }}</td></tr>
       <tr><td>状态</td><td><span class="badge {% if keepalive_info.need_login %}badge-orange{% elif browser_ok %}badge-green{% else %}badge-red{% endif %}" id="browser-badge">{% if keepalive_info.need_login %}需重新登录{% elif browser_ok %}在线{% else %}离线{% endif %}</span></td></tr>
     </table>
+    </div>
     {% else %}
     <p style="color:var(--gray);">尚未连接浏览器，请选择浏览器并启动登录。</p>
     {% endif %}
@@ -80,9 +83,9 @@
     <select id="browser-select" style="padding:6px 12px; border:1px solid var(--border); border-radius:4px; font-size:14px;">
       {% for b in available_browsers %}
       {% if b.available %}
-      <option value="{{ b.name }}" {% if b.default %}selected{% endif %}>{{ b.label }} ✓</option>
+      <option value="{{ b.name }}" {% if b.default %}selected{% endif %}>{{ b.label }}（可用）</option>
       {% else %}
-      <option value="{{ b.name }}" disabled>{{ b.label }} ✗（未安装）</option>
+      <option value="{{ b.name }}" disabled>{{ b.label }}（未安装）</option>
       {% endif %}
       {% endfor %}
     </select>
@@ -117,7 +120,7 @@
     　今日退出：<strong id="session-monitor-count">0</strong>
     　最近变化：<span id="session-monitor-changed" style="color:var(--gray)">—</span>
   </p>
-  <div class="table-scroll"><table>
+  <div class="table-scroll ds-collapse" data-ds-title="登录事件"><table>
     <thead><tr><th>时间</th><th>状态</th><th>来源</th><th>页面</th><th>依据</th></tr></thead>
     <tbody id="session-monitor-events"><tr><td colspan="5" style="color:var(--gray)"><span id="session-monitor-spin" class="antd-inline-spin" data-inline-spin="small"></span> 加载中</td></tr></tbody>
   </table></div>

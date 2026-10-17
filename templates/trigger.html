@@ -78,7 +78,7 @@ setInterval(function() {
 <div class="card" style="border-left: 4px solid var(--yellow);">
   <h2>执行 10:00 任务（测试模式）</h2>
   <p style="color:var(--gray); margin-bottom:12px;">使用最新快照数据，所有消息发给指定测试手机号。</p>
-  <div class="form-row">
+  <div class="form-row" style="flex-wrap:wrap;">
     <div class="form-group">
       <label>测试手机号</label>
       <input type="text" id="test-phone" placeholder="输入测试手机号">
@@ -99,7 +99,7 @@ setInterval(function() {
 <div class="card" style="border-left: 4px solid var(--turquoise);">
   <h2>执行正式任务</h2>
   <p style="color:var(--gray); margin-bottom:12px;">按规则通知对应收件人，不替换手机号。</p>
-  <div style="display:flex; gap:8px; align-items:center;">
+  <div style="display:flex; flex-wrap:wrap; gap:8px; align-items:center;">
     <label class="checkbox"><input type="checkbox" id="skip-crawl-formal"> 跳过爬取</label>
     <button type="button" class="btn btn-primary"
       data-antd-post="/api/run-morning"

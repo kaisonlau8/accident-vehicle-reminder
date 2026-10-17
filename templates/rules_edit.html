@@ -27,7 +27,7 @@
     {% for lv in rule.levels %}
     <div class="form-row" style="margin-bottom:8px;">
       <div>
-        <span class="badge badge-{{ lv.color }}">{{ lv.icon }} {{ lv.label }}</span>
+        <span class="badge badge-{{ lv.color }}"><svg class="ai" aria-hidden="true"><use href="#i-warning"/></svg> {{ lv.label }}</span>
       </div>
       <div>
         <input type="number" name="level_{{ loop.index0 }}_threshold" value="{{ lv.threshold }}" min="1" max="60" style="width:80px;">
