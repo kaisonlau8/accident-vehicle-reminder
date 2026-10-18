@@ -51,12 +51,13 @@ setInterval(function() {
 <div class="card" style="border-left: 4px solid var(--turquoise);">
   <h2>导入已有 Excel</h2>
   <p style="color:var(--gray); margin-bottom:12px;">选择 output/ 中已爬取的 Excel 文件，直接导入生成 JSON 快照。</p>
+  <div class="table-scroll" role="region" aria-label="可导入的 Excel 文件（可横向滚动）" tabindex="0">
   <table>
     <thead><tr><th>文件名</th><th>大小</th><th>修改时间</th><th>操作</th></tr></thead>
     <tbody>
     {% for f in xlsx_files %}
     <tr>
-      <td>{{ f.name }}</td>
+      <td>{{ f.name | ds_wbr_filename }}</td>
       <td>{{ f.size_kb }} KB</td>
       <td>{{ f.modified }}</td>
       <td>
@@ -66,12 +67,13 @@ setInterval(function() {
           data-antd-loading="正在导入…"
           data-antd-success="导入已开始"
           data-antd-reload="1"
-          onclick="fetch('/api/import-xlsx',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:{{ f.name | tojson | e }}})}).then(r=>r.json()).then(d=>{if(d.started)location.reload();})">导入</button>
+          onclick='fetch("/api/import-xlsx",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename:{{ f.name | tojson }}})}).then(r=>r.json()).then(d=>{if(d.started)location.reload();})'>导入</button>
       </td>
     </tr>
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endif %}
 

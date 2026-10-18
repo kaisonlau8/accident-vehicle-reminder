@@ -37,9 +37,82 @@
     return grid[grid.length - 1];
   }
 
+  /* ---- 共享断行辅助：门店/群名后缀不孤立 ----
+     先 HTML 转义，再只把末尾后缀包进 .ds-nowrap；模板内联脚本与各站 JS 共用。
+     用法：window.DS.noBreakTail(name) 返回可直接插入 innerHTML 的安全字符串。 */
+  function dsEscapeHtml(value) {
+    return String(value == null ? '' : value).replace(/[&<>"']/g, function (ch) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch];
+    });
+  }
+  var DS_TAIL_RE = /(零售中心|交付服务中心|用户中心|体验中心|服务中心|专属服务群|服务群|战区)$/;
+  function dsNoBreakTail(value) {
+    var html = dsEscapeHtml(value);
+    return DS_TAIL_RE.test(html) ? html.replace(DS_TAIL_RE, '<span class="ds-nowrap">$1</span>') : html;
+  }
+  window.DS = window.DS || {};
+  window.DS.escapeHtml = window.DS.escapeHtml || dsEscapeHtml;
+  window.DS.noBreakTail = window.DS.noBreakTail || dsNoBreakTail;
+
+  function cleanText(value) {
+    return String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  }
+
+  /* 卡片标签：data-card-label 优先；否则按 DOM 顺序收集 th 文本，
+     遇到 <br> 停止、跳过 <small>；<small> 单独作为第二行小字副标题。 */
+  function textBeforeBreak(th) {
+    var parts = [], stop = false;
+    function walk(node) {
+      for (var child = node.firstChild; child && !stop; child = child.nextSibling) {
+        if (child.nodeType === 3) {
+          parts.push(child.nodeValue || '');
+        } else if (child.nodeType === 1) {
+          if (child.tagName === 'BR') { stop = true; return; }
+          if (child.tagName === 'SMALL') continue;
+          walk(child);
+        }
+      }
+    }
+    walk(th);
+    return cleanText(parts.join(''));
+  }
+
+  function labelInfo(th) {
+    var label = cleanText(th.getAttribute('data-card-label'));
+    var sub = cleanText(th.getAttribute('data-card-sub'));
+    var subs = [];
+    [].forEach.call(th.querySelectorAll('small'), function (small) {
+      var text = cleanText(small.textContent);
+      if (text) subs.push(text);
+    });
+    if (!label) label = textBeforeBreak(th);
+    if (!sub) sub = subs.join(' · ');
+    return { label: label, sub: sub };
+  }
+
+  function labelInfos(t) {
+    return headCells(t).map(labelInfo);
+  }
+
   function labelsOf(t) {
-    return headCells(t).map(function (th) {
-      return (th.innerText || th.textContent || '').replace(/\s+/g, ' ').trim();
+    return labelInfos(t).map(function (info) { return info.label; });
+  }
+
+  function tableSig(t) {
+    return labelInfos(t).map(function (info) {
+      return info.label + '\u0001' + info.sub;
+    }).join('|');
+  }
+
+  /* 短表头：去空白后 ≤6 字且不含 <br>，才允许 nowrap；长表头保持换行。 */
+  function markShortHeaders(t) {
+    if (!t.tHead) return;
+    [].forEach.call(t.tHead.rows, function (row) {
+      [].forEach.call(row.cells, function (th) {
+        var text = (th.textContent || '').replace(/\s+/g, '');
+        var hit = text.length > 0 && text.length <= 6 && !th.querySelector('br');
+        th.classList.toggle('ds-th-short', hit);
+      });
     });
   }
 
@@ -63,7 +136,8 @@
   }
 
   function markRows(t, force) {
-    var labels = labelsOf(t);
+    var infos = labelInfos(t);
+    var labels = infos.map(function (info) { return info.label; });
     if (!labels.length) return;
     var ths = headCells(t), titleIdx = -1, fallback = -1;
     for (var i = 0; i < ths.length; i++) {
@@ -78,7 +152,9 @@
           var i = column; column += td.colSpan;
           if (tr.cells.length === 1 && td.colSpan > 1) return;
           var label = labels.slice(i, i + td.colSpan).join(' / ');
-          var cellSig = label + '|' + titleIdx;
+          var sub = infos.slice(i, i + td.colSpan).map(function (info) { return info.sub; })
+            .filter(Boolean).join(' · ');
+          var cellSig = label + '|' + sub + '|' + titleIdx;
           var same = !force && cellSigs.get(td) === cellSig;
           /* 标题 / 显式整行 / 无标签 / colspan 本就不包装：同签名直接返回。 */
           var wrapCandidate = i !== titleIdx && td.colSpan === 1 &&
@@ -94,7 +170,15 @@
               td.removeAttribute('data-label');
             }
           }
-          if (i === titleIdx) td.setAttribute('data-card-title', '');
+          if (i === titleIdx) {
+            td.setAttribute('data-card-title', '');
+            td.removeAttribute('data-card-sub');
+          } else if (sub) {
+            td.setAttribute('data-card-sub', sub);
+          } else {
+            /* 副标题被清空或表头重绘：无论 force 都移除旧值，避免残留。 */
+            td.removeAttribute('data-card-sub');
+          }
           /* 分类用 td 上已有的 data-label（模板可覆盖表头推导值）。 */
           var tdLabel = td.hasAttribute('data-label') ? td.getAttribute('data-label') : label;
           /* 整行只留给真正的输入控件；有表头的复选框列走标签左、复选框右。
@@ -117,7 +201,7 @@
 
   function upgrade(t) {
     if (t.getAttribute('data-cards') === 'off') return;
-    if (t.classList.contains('ant-table-cards')) { markRows(t, false); sigs.set(t, labelsOf(t).join('|')); return; }
+    if (t.classList.contains('ant-table-cards')) { markRows(t, false); sigs.set(t, tableSig(t)); return; }
     if (!t.tHead || !t.tHead.rows.length || !t.tBodies.length) return;
     var labels = labelsOf(t);
     if (!labels.length || !labels.some(Boolean)) return;
@@ -125,14 +209,15 @@
     var w = t.closest ? t.closest(WRAP) : null;
     if (w) w.classList.add('ant-table-wrap-cards');
     markRows(t, false);
-    sigs.set(t, labels.join('|'));
+    sigs.set(t, tableSig(t));
   }
 
   function scan() {
     [].forEach.call(document.querySelectorAll('table'), function (t) {
+      markShortHeaders(t);
       if (t.classList.contains('ant-table-cards')) {
-        var sig = labelsOf(t).join('|');
-        markRows(t, sigs.get(t) !== sig);   /* 动态表头及动态行都补标签 */
+        var sig = tableSig(t);
+        markRows(t, sigs.get(t) !== sig);   /* 动态表头/副标题/动态行都补标签 */
         sigs.set(t, sig);
         return;
       }
@@ -158,9 +243,21 @@
     return !!(node.querySelector && node.querySelector('table,tr,td,tbody,thead,tfoot'));
   }
 
+  function inTableHead(node) {
+    if (!node) return false;
+    if (node.nodeType !== 1) node = node.parentElement;
+    return !!(node && node.closest && node.closest('thead th'));
+  }
+
   function touchesCards(mutations) {
     for (var i = 0; i < mutations.length; i++) {
       var m = mutations[i];
+      /* 表头属性/文本原位变化：只认 thead/th 内的目标。
+         cards.js 自己写在 td 上的 data-card-sub 不触发重扫，避免死循环。 */
+      if (m.type === 'attributes' || m.type === 'characterData') {
+        if (inTableHead(m.target)) return true;
+        continue;
+      }
       if (touchesTable(m.target)) return true;
       var lists = [m.addedNodes, m.removedNodes];
       for (var k = 0; k < lists.length; k++) {
@@ -176,7 +273,13 @@
   if (document.body) {
     new MutationObserver(function (mutations) {
       if (touchesCards(mutations)) schedule();
-    }).observe(document.body, { childList: true, subtree: true });
+    }).observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['data-card-label', 'data-card-sub']
+    });
   } else {
     document.addEventListener('DOMContentLoaded', scan);
   }
@@ -226,7 +329,45 @@
       if ((el.type === 'checkbox' || el.type === 'radio') && !el.checked) return;
       var value = el.tagName === 'SELECT' ? [].filter.call(el.options, function (o) { return o.selected && o.value; }).map(function (o) { return o.textContent; }).join('、') : el.value;
       if (!value) return;
-      var group = el.closest('.selector-group,.ant-filter-item,.filter-item');
+      var group = el.closest('.selector-group,.ant-filter-item,.filter-item,fieldset,.ant-radio-group');
+      /* radio 用「组标签 + 选中项文字」，不能拿选中项自己的 label 再拼 value（月：month）。 */
+      if (el.type === 'radio') {
+        var itemLabel = el.labels && el.labels[0] ? el.labels[0].textContent.trim() : '';
+        var groupLabelText = '';
+        if (group) {
+          if (group.hasAttribute('data-group-label')) {
+            groupLabelText = (group.getAttribute('data-group-label') || '').trim();
+          } else {
+            var groupLabelEl = group.querySelector('[data-group-label]');
+            if (groupLabelEl) {
+              groupLabelText = (groupLabelEl.getAttribute('data-group-label') || groupLabelEl.textContent || '').trim();
+            }
+          }
+          if (!groupLabelText) {
+            var legend = group.querySelector('legend');
+            if (legend) groupLabelText = legend.textContent.trim();
+          }
+          if (!groupLabelText) {
+            var titleEl = group.querySelector('.filter-title,.ant-radio-group-label');
+            if (titleEl) groupLabelText = titleEl.textContent.trim();
+          }
+          if (!groupLabelText) {
+            var groupLabels = group.querySelectorAll('label');
+            for (var gi = 0; gi < groupLabels.length; gi++) {
+              var lab = groupLabels[gi], skip = lab.contains(el);
+              if (!skip && lab.querySelector('input[type="radio"],input[type="checkbox"]')) skip = true;
+              var forId = lab.getAttribute('for');
+              if (!skip && forId) {
+                var target = document.getElementById(forId);
+                if (target && (target.type === 'radio' || target.type === 'checkbox')) skip = true;
+              }
+              if (!skip) { groupLabelText = lab.textContent.trim(); break; }
+            }
+          }
+        }
+        parts.push((groupLabelText || el.getAttribute('aria-label') || el.name || '选项') + '：' + (itemLabel || el.value));
+        return;
+      }
       var label = (el.labels && el.labels[0]) || (group && group.querySelector('label'));
       parts.push((label ? label.textContent.trim() : el.getAttribute('aria-label') || el.name || '搜索') + '：' + ((el.type === 'checkbox') ? '已启用' : value));
     });

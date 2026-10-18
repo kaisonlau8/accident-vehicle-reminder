@@ -47,7 +47,7 @@
         {% endif %}
       </td>
       <td>{{ v.store_code }}</td>
-      <td>{{ v.store_name }}</td>
+      <td>{{ v.store_name | nobreak_tail }}</td>
       <td>{{ v.region }}</td>
       <td>{{ v.vin }}</td>
       <td>{{ v.vehicle_model }}</td>
@@ -59,7 +59,7 @@
       <td>
         {% set hist = alert_history.get(v.vin) %}
         {% if hist %}
-          第{{ hist.alert_count }}次<br><span style="font-size:12px;color:var(--gray);">首次: {{ hist.first_alert_date }}</span>
+          第{{ hist.alert_count }}次<br><span style="font-size:12px;color:var(--gray);">首次: <span class="ds-nowrap">{{ hist.first_alert_date }}</span></span>
         {% else %}
           —
         {% endif %}

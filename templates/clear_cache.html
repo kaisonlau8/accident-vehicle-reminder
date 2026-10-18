@@ -65,7 +65,7 @@
       </label>
     </div>
 
-    <div style="display:flex; gap:8px; align-items:center;">
+    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
       <button type="button" id="btn-clear-selected" class="btn btn-danger" onclick="clearSelected()">清除选中项</button>
       <button type="button" id="btn-clear-all" class="btn btn-danger" onclick="clearAll()">一键清除全部</button>
       <span id="clear-result" style="color:var(--turquoise); font-size:14px;"></span>
@@ -76,7 +76,7 @@
 <div class="card">
   <h2>快捷操作</h2>
   <p style="color:var(--gray); margin-bottom:12px;">仅清除测试相关数据，保留爬取的 Excel 和浏览器会话。</p>
-  <button type="button" id="btn-clear-test" class="btn btn-primary" onclick="clearTestData()">仅清除测试数据（告警历史+发送日志+收件人缓存+数据快照+报表）</button>
+  <button type="button" id="btn-clear-test" class="btn btn-primary" onclick="clearTestData()" title="告警历史 + 发送日志 + 收件人缓存 + 数据快照 + 报表">仅清除测试数据</button>
 </div>
 
 {% endblock %}
