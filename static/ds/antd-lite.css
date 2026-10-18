@@ -1316,9 +1316,14 @@ a.ant-btn-loading.is-locked { pointer-events: none; }
 
 /* ---- 9.6 表格移动端卡片化（<=768px）：配合 design-system/cards.js 使用 ----
          JS 自动给表格加 .ant-table-cards、给 td 补 data-label（th 文本）/ data-card-title
-         （卡片标题列）/ data-cards-full（复选框/操作/输入等控件列），已有属性不覆盖；
-         支持 colspan 空表行、表头为空的列。全部规则仅在 <=768px 生效，桌面端零影响；
+         （卡片标题列）/ data-cards-full（仅输入控件与复选框列），已有属性不覆盖；
+         字段行一律标签左、值右同一行；整行只留给输入控件单元格、复选框列、无表头列和
+         模板显式 data-cards-full 的单元格。支持 colspan 空表行、表头为空的列。
+         全部规则仅在 <=768px 生效，桌面端零影响；
          旧表格样式（粘性表头/冻结列/斑马/右对齐）一律用 !important 压过。 ---- */
+/* 值容器只在移动端卡片里生成盒子；桌面端 display:contents，表格布局与包装前一致。 */
+.ant-table-cards td > .ds-card-value { display: contents; }
+
 @media (max-width: 768px) {
   /* 外层滚动容器（.tw/.ant-table-wrap/.sheet/.store-table-wrapper，JS 加 .ant-table-wrap-cards）：
      取消边框/阴影/横向滚动/限高，卡片直接铺在页面里 */
@@ -1373,28 +1378,95 @@ a.ant-btn-loading.is-locked { pointer-events: none; }
   }
   .ant-table-cards td[data-card-title]::before { content: none !important; }
 
-  /* 其余字段：「标签–值」两列网格。::before 占第 1 列并跨全部行，
-     单元格里的其余内容（元素与匿名文本）自动落进第 2 列堆叠 */
-  .ant-table-cards td[data-label]:not([data-card-title]):not([data-cards-full]):not([colspan]) {
+  /* 其余字段：标签作为 grid 第一列参与行高，值内容统一由 cards.js 收进
+     .ds-card-value 放在第二列；容器内部仍是普通文档流，匿名文本、多个链接/
+     按钮不会被拆成独立网格项。标签可换行，单元格高度随标签和值取大者。 */
+  .ant-table-cards td[data-label]:not([data-label=""]):not([data-card-title]):not([data-cards-full]):not([colspan]) {
     display: grid !important;
     grid-template-columns: minmax(4.5em, 38%) minmax(0, 1fr);
-    column-gap: var(--ant-space-3); row-gap: 0; align-items: baseline;
+    column-gap: var(--ant-space-3); align-items: start;
+    min-height: 26px;
+    padding: 4px 0 !important;
+    text-align: left !important;
+    line-height: 1.35;
   }
-  .ant-table-cards td[data-label]:not([data-card-title]):not([colspan])::before {
+  .ant-table-cards td[data-label]:not([data-label=""]):not([data-card-title]):not([data-cards-full]):not([colspan])::before {
     content: attr(data-label);
-    grid-column: 1; grid-row: 1;
+    grid-column: 1; grid-row: 1; align-self: start;
     font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary);
-    align-self: start; line-height: 1.65; min-width: 0;
+    line-height: 1.35; white-space: normal; overflow-wrap: anywhere;
+  }
+  .ant-table-cards td[data-label]:not([data-label=""]):not([data-card-title]):not([data-cards-full]):not([colspan]) > .ds-card-value {
+    grid-column: 2; grid-row: 1;
+    display: block; min-width: 0;
+    position: relative; z-index: 0;   /* 让热区伪元素垫在所有控件本体之下 */
   }
   .ant-table-cards td[data-label] .ant-tag { margin-right: 4px; }
 
-  /* 控件列：表头为空的列（复选框/操作）与含控件/链接组的列（JS 标 data-cards-full）
-     —— 控件整行宽、触控 >=44px；标签（若有）单独一行 */
-  .ant-table-cards td:not([data-label]):not([colspan]),
-  .ant-table-cards td[data-cards-full]:not([colspan]) {
+  /* 值列中的 tag / badge 与文字同高，不再用 22px 胶囊高度撑行 */
+  .ant-table-cards .ds-card-value .ant-tag,
+  .ant-table-cards .ds-card-value .badge {
+    display: inline-flex !important; align-items: center !important;
+    height: auto !important; min-height: 0 !important;
+    padding-top: 0 !important; padding-bottom: 0 !important;
+    line-height: 1.25 !important; vertical-align: top;
+  }
+
+  /* 值列里的按钮/链接：本体与文本行同高，不再保留 34/44px 实体高度；
+     点击热区交给不占布局的 ::after（上下不出 td padding，横向至少 44px）。 */
+  .ant-table-cards .ds-card-value a:not(.ant-tag):not(.ant-chip),
+  .ant-table-cards .ds-card-value button:not(.select-trigger):not(.burger),
+  .ant-table-cards .ds-card-value .ant-btn:not(.select-trigger),
+  .ant-table-cards .ds-card-value .btn {
+    display: inline-flex; align-items: center;
+    width: auto; height: auto !important; min-height: 0 !important;
+    margin: 0; padding-top: 0 !important; padding-bottom: 0 !important;
+    line-height: 1.25 !important; vertical-align: top;
+    max-width: 100%; white-space: normal; overflow-wrap: anywhere;
+  }
+  .ant-table-cards .ds-card-value button,
+  .ant-table-cards .ds-card-value .ant-btn,
+  .ant-table-cards .ds-card-value .btn { white-space: nowrap; }
+  .ant-table-cards .ds-card-value .ant-check-hit {
+    display: inline-flex !important; align-items: center !important;
+    width: auto !important; height: auto !important;
+    min-width: 0 !important; min-height: 0 !important;
+    margin: 0 !important; padding: 0 !important; vertical-align: top;
+  }
+  /* 热区伪元素：±10px 横向，竖直只扩到 td 上下 padding（4px）内 */
+  .ant-table-cards .ds-card-value a:not(.ant-tag):not(.ant-chip),
+  .ant-table-cards .ds-card-value button:not(.select-trigger):not(.burger),
+  .ant-table-cards .ds-card-value .ant-btn:not(.select-trigger),
+  .ant-table-cards .ds-card-value .btn,
+  .ant-table-cards .ds-card-value .ant-check-hit {
+    position: relative;
+  }
+  .ant-table-cards .ds-card-value a:not(.ant-tag):not(.ant-chip)::after,
+  .ant-table-cards .ds-card-value button:not(.select-trigger):not(.burger)::after,
+  .ant-table-cards .ds-card-value .ant-btn:not(.select-trigger)::after,
+  .ant-table-cards .ds-card-value .btn::after,
+  .ant-table-cards .ds-card-value .ant-check-hit::after {
+    content: ""; position: absolute; left: 50%; top: -4px; bottom: -4px;
+    width: max(100% + 20px, 44px); transform: translateX(-50%);
+    z-index: -1;   /* 只扩大空白处热区；控件本体始终压在自己/兄弟热区之上 */
+  }
+  /* 值列里的表单/明细：与同行的 tag、文字并排，按钮不换到标签下方 */
+  .ant-table-cards .ds-card-value form {
+    display: inline-flex; flex-wrap: wrap; align-items: center;
+    gap: 4px var(--ant-space-2); width: auto; max-width: 100%;
+    margin: 0 !important; vertical-align: top;
+  }
+  .ant-table-cards .ds-card-value details {
+    display: inline-block; max-width: 100%; margin: 0 4px 0 0; vertical-align: top;
+  }
+
+  /* 仍需整行：真正的表单控件单元格（input/select/textarea 等，JS 标 data-cards-full）
+     与复选框列 —— 标签独占一行，控件整行宽、触控 >=44px。模板显式标 data-cards-full
+     的单元格同样走整行；只含按钮/链接/隐藏域的操作列仍由上面的左右布局处理。 */
+  .ant-table-cards td[data-cards-full]:not([data-card-title]):not([colspan]) {
     display: flex !important; flex-wrap: wrap; gap: var(--ant-space-2); align-items: center;
   }
-  .ant-table-cards td[data-cards-full][data-label]::before {
+  .ant-table-cards td[data-cards-full][data-label]:not([data-card-title])::before {
     content: attr(data-label); flex: 0 0 100%;
     font-size: var(--ant-font-size-sm); color: var(--ant-color-text-secondary); line-height: 1.65;
   }
@@ -1410,7 +1482,21 @@ a.ant-btn-loading.is-locked { pointer-events: none; }
     width: 100% !important; min-width: 0 !important;
   }
   .ant-table-cards td form { display: flex; flex-wrap: wrap; gap: var(--ant-space-2); align-items: center; margin: 0; }
-  .ant-table-cards td:not([data-label]):not([data-cards-full]):not([colspan]) > * { flex: 0 0 auto; }
+  /* 整行表单也从左排：避免旧 filter-bar 的居中规则把控件缩在中间 */
+  .ant-table-cards td[data-cards-full] form {
+    align-items: flex-start !important; justify-content: flex-start !important;
+  }
+  .ant-table-cards td[data-cards-full] form > * { flex: 0 0 auto; max-width: 100%; }
+
+  /* 表头为空的列（复选框/旧操作列）：整行块，无标签 */
+  .ant-table-cards td:not([data-label]):not([colspan]),
+  .ant-table-cards td[data-label=""]:not([colspan]) {
+    display: flex !important; flex-wrap: wrap; gap: var(--ant-space-2); align-items: center;
+  }
+  .ant-table-cards td:not([data-label]):not([colspan]) > *,
+  .ant-table-cards td[data-label=""]:not([colspan]) > * { flex: 0 0 auto; }
+  .ant-table-cards td:not([data-label]) > .ant-check-hit,
+  .ant-table-cards td[data-label=""] > .ant-check-hit { flex: 0 0 auto; min-width: var(--ant-control-height-mobile); }
 
   /* 纯行号列（#）在卡片里没有信息量：隐藏 */
   .ant-table-cards td[data-label="#"]:not([data-card-title]):not([data-cards-full]):not([colspan]) { display: none !important; }
@@ -2599,7 +2685,7 @@ details > .ds-native-summary::before, details > .ds-native-summary::after,
 a.ds-page-link { cursor: pointer; }
 @media (hover: hover) {
   a.ds-page-link:hover { text-decoration: underline; }
-  td:has(> a.ds-page-link):hover { background: #e6f4ff; }
+  td:has(a.ds-page-link):hover { background: #e6f4ff; }
 }
 [data-sd-events][role="button"], [data-sd-members], .sd-link { cursor: pointer; }
 @media (hover: hover) {
@@ -2720,8 +2806,8 @@ html { -webkit-tap-highlight-color: transparent; }
 .ds-cell-action:active,
 .theater-row:active td,
 .theater-row td:active,
-td:has(> a.ds-page-link):active,
-td:has(> a.ds-page-link:active) {
+td:has(a.ds-page-link):active,
+td:has(a.ds-page-link:active) {
   background-color: #f0f0f0 !important;
 }
 

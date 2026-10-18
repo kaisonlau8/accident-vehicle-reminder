@@ -6,8 +6,9 @@
  *   th 内的 <small> 副标题会并进标签（如「首保完成率 已保/应保」）；
  * - 卡片标题：th[data-card-title] 所在列的 td 标 data-card-title；
  *   未显式指定时回退为第一个「非 #/名次/排名/编号 且非空」的列；
- * - 控件列（含 button/input/select/textarea/form 或「纯链接」的单元格）标 data-cards-full，
- *   CSS 里整行宽、触控 >=44px；
+ * - 仅真正的输入控件单元格与无表头复选框列标 data-cards-full，CSS 里整行宽；
+ *   有表头复选框列与按钮/链接组不再整行，卡片统一「标签左、值右」同行；
+ * - 模板已显式写 data-cards-full 的单元格保持整行（cards.js 不覆盖已有属性）；
  * - colspan 行（空表）、无 thead 的表格原样跳过；table[data-cards="off"] 可退出；
  * - MutationObserver 兜底：JS 后插入的行/表头（NSS、超时机器人等）会补标。
  * 桌面端只添加无害属性，不改任何布局与行为。 */
@@ -42,6 +43,25 @@
     });
   }
 
+  function valueWrap(td) {
+    for (var n = td.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === 1 && n.className === 'ds-card-value') return n;
+    }
+    return null;
+  }
+
+  /* 把值内容收进一个容器，td 才能用 grid 让标签参与行高，同时不把匿名文本/
+     多个子元素拆成独立网格项。幂等：已有容器不重复包。 */
+  function wrapValue(td) {
+    var box = valueWrap(td);
+    if (box) return box;
+    box = document.createElement('span');
+    box.className = 'ds-card-value';
+    while (td.firstChild) box.appendChild(td.firstChild);
+    td.appendChild(box);
+    return box;
+  }
+
   function markRows(t, force) {
     var labels = labelsOf(t);
     if (!labels.length) return;
@@ -59,7 +79,14 @@
           if (tr.cells.length === 1 && td.colSpan > 1) return;
           var label = labels.slice(i, i + td.colSpan).join(' / ');
           var cellSig = label + '|' + titleIdx;
-          if (!force && cellSigs.get(td) === cellSig) return;
+          var same = !force && cellSigs.get(td) === cellSig;
+          /* 标题 / 显式整行 / 无标签 / colspan 本就不包装：同签名直接返回。 */
+          var wrapCandidate = i !== titleIdx && td.colSpan === 1 &&
+            !td.hasAttribute('data-cards-full') &&
+            td.hasAttribute('data-label') && td.getAttribute('data-label') !== '';
+          if (same && !wrapCandidate) return;
+          /* 候选单元格已有值容器：无变化不重复处理；容器被业务重绘掉时重包。 */
+          if (same && wrapCandidate && valueWrap(td)) return;
           if (i < labels.length) {
             if (label) {
               if (force || !td.hasAttribute('data-label')) td.setAttribute('data-label', label);
@@ -68,14 +95,19 @@
             }
           }
           if (i === titleIdx) td.setAttribute('data-card-title', '');
-          if (!td.hasAttribute('data-cards-full')) {
-            var ctl = td.querySelector('button,input:not([type="hidden"]),select,textarea,form,.ant-btn,.btn');
-            if (!ctl) {
-              var probe = td.cloneNode(true);
-              [].forEach.call(probe.querySelectorAll('a'), function (a) { a.remove(); });
-              if (!(probe.textContent || '').trim() && td.querySelector('a')) ctl = true;
-            }
-            if (ctl) td.setAttribute('data-cards-full', '');
+          /* 分类用 td 上已有的 data-label（模板可覆盖表头推导值）。 */
+          var tdLabel = td.hasAttribute('data-label') ? td.getAttribute('data-label') : label;
+          /* 整行只留给真正的输入控件；有表头的复选框列走标签左、复选框右。
+             无表头的复选框列（选择列）保持整行。模板显式 data-cards-full 不覆盖。 */
+          if (!td.hasAttribute('data-cards-full') && i !== titleIdx) {
+            var ctl = td.querySelector(
+              'input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]),select,textarea'
+            );
+            var check = td.querySelector('input[type="checkbox"],input[type="radio"],.ant-check-hit');
+            if (ctl || (check && !tdLabel)) td.setAttribute('data-cards-full', '');
+          }
+          if (i !== titleIdx && td.colSpan === 1 && tdLabel && !td.hasAttribute('data-cards-full')) {
+            wrapValue(td);
           }
           cellSigs.set(td, cellSig);
         });
@@ -114,9 +146,37 @@
     pending = setTimeout(function () { pending = null; scan(); }, 50);
   }
 
+  /* 只有增删节点涉及 table / tr / td / tbody / thead 时才重扫；
+     页面倒计时等纯文本更新不再触发全表扫描。 */
+  function touchesTable(node) {
+    if (!node) return false;
+    if (node.nodeType === 3) node = node.parentElement;
+    if (!node || node.nodeType !== 1) return false;
+    if (node.closest && node.closest('table')) return true;
+    var tag = node.tagName;
+    if (tag === 'TABLE' || tag === 'TR' || tag === 'TD' || tag === 'TBODY' || tag === 'THEAD' || tag === 'TFOOT') return true;
+    return !!(node.querySelector && node.querySelector('table,tr,td,tbody,thead,tfoot'));
+  }
+
+  function touchesCards(mutations) {
+    for (var i = 0; i < mutations.length; i++) {
+      var m = mutations[i];
+      if (touchesTable(m.target)) return true;
+      var lists = [m.addedNodes, m.removedNodes];
+      for (var k = 0; k < lists.length; k++) {
+        for (var j = 0; j < lists[k].length; j++) {
+          if (touchesTable(lists[k][j])) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   scan();
   if (document.body) {
-    new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true });
+    new MutationObserver(function (mutations) {
+      if (touchesCards(mutations)) schedule();
+    }).observe(document.body, { childList: true, subtree: true });
   } else {
     document.addEventListener('DOMContentLoaded', scan);
   }
