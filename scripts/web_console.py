@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from flask import (
-    Flask, render_template, request, redirect, url_for,
+    Flask, abort, render_template, request, redirect, url_for,
     jsonify, send_from_directory, send_file,
 )
 
@@ -80,6 +80,24 @@ app = Flask(
     template_folder=str(PLUGIN_ROOT / "templates"),
     static_folder=str(PLUGIN_ROOT / "static"),
 )
+
+# 共享断行过滤器（design-system/linebreak.py 由 sync.sh 同步到 static/ds/）
+sys.path.insert(0, str(PLUGIN_ROOT / "static"))
+from ds.linebreak import ds_wbr_filename, nobreak_tail  # noqa: E402
+
+app.jinja_env.filters["nobreak_tail"] = nobreak_tail
+app.jinja_env.filters["ds_wbr_filename"] = ds_wbr_filename
+
+
+@app.before_request
+def _block_static_python():
+    """静态目录只对外提供前端资源；Python 源码/字节码仅服务端使用，禁止下载。"""
+    path = request.path.lower()
+    if path.startswith("/static/") and (
+        path.endswith(".py") or path.endswith(".pyc") or "/__pycache__/" in path
+    ):
+        abort(404)
+
 
 # 本地设计系统副本由工作区 design-system/sync.sh 同步。
 _DS_DIR = PLUGIN_ROOT / "static" / "ds"

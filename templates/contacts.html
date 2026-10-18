@@ -29,6 +29,7 @@
 <div class="card">
   <h2>门店列表（{{ store_list | length }} 家）</h2>
   <p style="color:var(--gray); margin-bottom:8px;">以下数据来自最近一次同步后的本地缓存。</p>
+  <div class="table-scroll" role="region" aria-label="门店列表（可横向滚动）" tabindex="0">
   <table data-ds-primary>
     <thead>
       <tr><th>店代码</th><th>店名称</th><th>区域</th><th>督导</th><th>售后负责人</th></tr>
@@ -37,7 +38,7 @@
     {% for s in store_list %}
     <tr>
       <td>{{ s.code }}</td>
-      <td>{{ s.name }}</td>
+      <td>{{ s.name | nobreak_tail }}</td>
       <td>{{ s.region }}</td>
       <td>{{ s.supervisor }}</td>
       <td>{% if s.manager_ok %}{{ s.manager or "已配置" }}{% else %}<span style="color:var(--red);">无联系人，门店消息将跳过</span>{% endif %}</td>
@@ -45,6 +46,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 
 <div class="card">
@@ -65,6 +67,7 @@
       </div>
     </div>
   </form>
+  <div class="table-scroll" role="region" aria-label="全国收件人（可横向滚动）" tabindex="0">
   <table>
     <thead><tr><th>名称/键</th><th>手机号</th><th>解析</th><th>操作</th></tr></thead>
     <tbody>
@@ -85,6 +88,7 @@
     {% endfor %}
     </tbody>
   </table>
+  </div>
 </div>
 {% endblock %}
 {% block scripts %}

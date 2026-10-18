@@ -2869,3 +2869,95 @@ td:has(a.ds-page-link:active) {
     scroll-behavior: auto !important;
   }
 }
+
+/* ==========================================================================
+   27. 断行批量修复（R1）：原子 token 不拆、容器换行、长文本优雅断行
+   只保护短 token（表头 / 按钮 / 页签 / 日期 / 时段 / 名称后缀），
+   不对整格长文本 nowrap；表格容器本身仍可横向滚动。
+   ========================================================================== */
+.ds-nowrap, .ds-token { white-space: nowrap; }
+
+/* 页签 / 分段 / chip / tag / 按钮：内部不换行；放不下时由容器换行，而不是把词拆开 */
+.ant-btn, .btn, .filter-btn, .export-link, .tab-btn, .toggle-btn,
+.ant-segmented-item, .ant-chip, .ant-tag, .theater-chip, .day-pill,
+.ant-btn-group > .ant-btn { white-space: nowrap; }
+.tabs, .ant-tabs-nav-list, .ant-segmented, .ant-btn-group, .ant-chip-group,
+.export-row, .score-actions, .rules-actions, .groups-pager, .ant-page-header-actions,
+.ant-card-extra, .browser-actions, .apply-submit, .ant-flex { flex-wrap: wrap; }
+
+/* 只保护短表头：cards.js 给去空白后 ≤6 字且不含 <br> 的 th 加 .ds-th-short。
+   长表头保持正常换行，避免桌面宽表被 nowrap 撑出横向滚动。
+   选择器带 table + class，压过各系统 .store-table th { white-space:normal }。 */
+table th { white-space: normal; }
+table th.ds-th-short { white-space: nowrap; }
+/* 长表头允许换行，但给一个最小宽度，避免在超宽表里被挤成每行 1 个字。 */
+table th:not(.ds-th-short) { min-width: 4.5em; }
+
+/* 卡片说明：从卡片标题里拆出来后单独成行的小字 */
+.ant-card-head .ds-card-desc {
+  flex: 1 1 100%;
+  min-width: 0;
+  font-size: var(--ant-font-size-sm);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--ant-color-text-secondary);
+}
+
+/* 渐进增强：长名称/说明避免末行孤字，标题尽量两行均衡；不支持时完全无副作用 */
+@supports (text-wrap-style: pretty) {
+  .ant-table-cards td[data-card-title],
+  .ant-table-cards td[data-label],
+  .ds-text-pretty,
+  .chart-hint, .ant-page-header-sub, .score-note, .ant-card-head .ds-card-desc,
+  table th:not(.ds-th-short) {
+    text-wrap-style: pretty;
+  }
+}
+@supports (text-wrap-style: balance) {
+  h1, h2, h3,
+  .ant-page-header h1, .ant-card-head-title, .ant-empty-title,
+  .ds-text-balance { text-wrap-style: balance; }
+}
+
+@media (max-width: 768px) {
+  /* th 的 <small> 副标题作为卡片标签第二行小字（如「首保完成率 / 已保/应保」） */
+  .ant-table-cards td[data-card-sub]:not([data-label=""]):not([data-card-title]):not([data-cards-full]):not([colspan])::after {
+    content: attr(data-card-sub);
+    grid-column: 1;
+    grid-row: 2;
+    margin-top: 2px;
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.3;
+    color: var(--ant-color-text-tertiary);
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  /* 有副标题时值跨两行：主标签在第 1 行、副标题紧贴第 2 行，值始终与标签并排。
+     没有 data-card-sub 的行不命中，布局保持不变。 */
+  .ant-table-cards td[data-card-sub]:not([data-label=""]):not([data-card-title]):not([data-cards-full]):not([colspan]) {
+    /* 第 1 行只放主标签，额外高度由第 2 行承接，副标题始终紧贴标签。 */
+    grid-template-rows: auto 1fr;
+  }
+  .ant-table-cards td[data-card-sub]:not([data-label=""]):not([data-card-title]):not([data-cards-full]):not([colspan]) > .ds-card-value {
+    grid-row: 1 / span 2;
+  }
+}
+
+@media (max-width: 768px) {
+  /* 标签较长的矩阵表（如备件名称）：标签列适当加宽并缩小一号，避免末字孤立 */
+  .ant-table-cards.ds-card-label-wide td[data-label]:not([data-label=""]):not([data-card-title]):not([data-cards-full]):not([colspan]) {
+    grid-template-columns: minmax(5.5em, 46%) minmax(0, 1fr);
+  }
+  .ant-table-cards.ds-card-label-wide td[data-label]:not([data-label=""]):not([data-card-title]):not([data-cards-full]):not([colspan])::before {
+    font-size: 11px;
+  }
+}
+
+
+/* 备件矩阵（reportdb）桌面端：备件名称保持单行，避免把「编码/名称/标准量」
+   三行表头挤成四行；移动端卡片模式不显示 thead，不受影响。 */
+@media (min-width: 769px) {
+  th.ds-spare-th small { white-space: nowrap; }
+}
