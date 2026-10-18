@@ -179,6 +179,36 @@
   function nowMobile() {
     return window.innerWidth <= 860;
   }
+  /* 顶部固定区总高：顶栏实测高度（--ds-header-h，含 safe-area 与 1px 分割线）
+     + 可见子标题栏高度（--ds-subbar-h）。折叠复位、锚点、吸顶筛选共用同一变量链。 */
+  function fixedTopOffset() {
+    var rootStyle = getComputedStyle(document.documentElement);
+    var h = parseFloat(rootStyle.getPropertyValue('--ds-header-h'));
+    if (!isFinite(h) || h <= 0) {
+      var header = headerEl();
+      h = header ? header.getBoundingClientRect().height : 0;
+    }
+    var bar = document.querySelector('.ds-subbar');
+    var sub = 0;
+    if (bar && getComputedStyle(bar).display !== 'none') {
+      sub = parseFloat(rootStyle.getPropertyValue('--ds-subbar-h'));
+      if (!isFinite(sub) || sub <= 0) sub = bar.getBoundingClientRect().height;
+    }
+    return Math.round(h + sub);
+  }
+  /* 收起长面板后，若折叠头已被顶栏/子标题栏遮住或滚出视口上方，就把它滚回固定区下方 8px。 */
+  function keepCollapseHeadVisible(head) {
+    if (!head || !head.getBoundingClientRect) return;
+    var rect = head.getBoundingClientRect();
+    var top = fixedTopOffset();
+    if (rect.top >= top + 8) return;   /* 头部完整可见：不打扰用户 */
+    var y = window.scrollY + rect.top - top - 8;
+    if (y < 0) y = 0;
+    window.scrollTo({
+      top: Math.round(y),
+      behavior: reduced() ? 'auto' : 'smooth'
+    });
+  }
   function clearPanelInline(panel) {
     panel.style.height = ''; panel.style.opacity = ''; panel.style.overflow = '';
   }
@@ -188,6 +218,10 @@
   function setPanelOpen(s, open, instant) {
     if (s.visualOpen === open && s.ready && !instant) return;
     var panel = s.panel;
+    /* 收起（动画 / reduced-motion / 直接 hidden 三条路径都经过这里）时复位视线。 */
+    if (!open && s.visualOpen) {
+      requestAnimationFrame(function () { keepCollapseHeadVisible(s.btn); });
+    }
     s.gen = (s.gen || 0) + 1;
     var gen = s.gen;
     if (s.animating || instant) { cancelPanelAnims(panel); s.animating = false; }
@@ -282,15 +316,23 @@
     head.classList.add('ds-native-summary');
     head.setAttribute('aria-expanded', String(d.open));
     if (!d.dataset.dsToggleReady) {
-      d.addEventListener('toggle', function () { head.setAttribute('aria-expanded', String(d.open)); });
+      d.addEventListener('toggle', function () {
+        head.setAttribute('aria-expanded', String(d.open));
+        /* 原生 details 收起（含 reduced-motion 直接切换与动画结束后的 d.open=false）。 */
+        if (!d.open) requestAnimationFrame(function () { keepCollapseHeadVisible(head); });
+      });
       d.dataset.dsToggleReady = '1';
     }
     if (!head.querySelector(':scope > .ds-collapse-arrow')) head.appendChild(icon('down', 'ds-collapse-arrow'));
     if (!d.dataset.dsNativeMotion) {
       d.dataset.dsNativeMotion = '1';
       head.addEventListener('click', function (e) {
-        if (reduced()) return;
+        if (reduced()) {
+          if (d.open) keepCollapseHeadVisible(head);
+          return;
+        }
         if (d.open) {
+          keepCollapseHeadVisible(head);
           e.preventDefault();
           var from = d.getBoundingClientRect().height;
           var to = head.getBoundingClientRect().height;
@@ -540,7 +582,18 @@
   function schedule() { if (!timer) timer = setTimeout(function () { timer = null; scan(); }, 80); }
   window.MheroInteraction = { scan: scan, icon: icon, skeleton: skeleton, goBack: goBack };
   function boot() {
-    scan(); motion(); scrollShadow();
+    scan(); syncHeaderHeight(); motion(); scrollShadow();
+    var header = headerEl();
+    if (header && window.ResizeObserver) {
+      var headerRaf = 0;
+      new ResizeObserver(function () {
+        if (headerRaf) return;
+        headerRaf = requestAnimationFrame(function () { headerRaf = 0; syncHeaderHeight(); });
+      }).observe(header);
+    }
+    /* 字体加载/图片解码后顶栏高度可能变化：补一次实测，避免子标题栏仍用旧偏移。 */
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(syncHeaderHeight);
+    window.addEventListener('load', syncHeaderHeight, { once: true, passive: true });
     new MutationObserver(function () { if (!selfMutating) schedule(); }).observe(document.body, { childList: true, subtree: true, characterData: true });
     if (mobile.addEventListener) mobile.addEventListener('change', function () { refreshAll(true); schedule(); });
     window.addEventListener('resize', onResize, { passive: true });
@@ -574,7 +627,7 @@
   window.__mheroMobileNav = true;
 
   var mq = window.matchMedia('(max-width: 860px)');
-  var OWN = '.burger, [data-burger]';
+  var OWN = '.burger, [data-burger], .nav-toggle';
 
   function setBurger(btn, open) {
     if (!btn) return;
@@ -761,3 +814,40 @@ if (!window.__dsTapFeedbackBound) {
   window.__dsTapFeedbackBound = true;
   document.addEventListener('touchstart', function(){}, {passive:true});
 }
+
+/* 26.9 禁止缩放守卫（与 viewport meta 的 maximum-scale=1 / user-scalable=no 配套）：
+   · iOS Safari 的 gesturestart / gesturechange（双指缩放）直接拦截；
+   · 300ms 内的第二次 touchend 视为双击，阻止默认缩放；
+   · 输入框 / select / textarea / contenteditable / 横向表格滚动容器不拦截，
+     保证输入、选择、单击、滚动与表格横滑不受影响。 */
+(function () {
+  'use strict';
+  if (window.__dsZoomGuard) return;
+  window.__dsZoomGuard = true;
+
+  function stop(e) { if (e.cancelable) e.preventDefault(); }
+  document.addEventListener('gesturestart', stop, { passive: false });
+  document.addEventListener('gesturechange', stop, { passive: false });
+  document.addEventListener('gestureend', stop, { passive: false });
+
+  var lastTap = 0;
+  function protectedTarget(t) {
+    if (!t || !t.closest) return true;
+    if (t.closest('input, select, textarea, label, [contenteditable="true"], [contenteditable=""]')) return true;
+    return !!t.closest('.tw, .ant-table-wrap, .sheet, .table-scroll, .store-table-wrapper, .freeze-wrap');
+  }
+  document.addEventListener('touchend', function (e) {
+    if (!e.changedTouches || e.changedTouches.length !== 1) return;
+    if (protectedTarget(e.target)) { lastTap = 0; return; }
+    var now = Date.now();
+    if (lastTap && now - lastTap < 300) {
+      if (e.cancelable) e.preventDefault();
+      lastTap = 0;
+      return;
+    }
+    lastTap = now;
+  }, { passive: false });
+  document.addEventListener('touchstart', function (e) {
+    if (e.touches && e.touches.length > 1) lastTap = 0;
+  }, { passive: true });
+})();
