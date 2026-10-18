@@ -754,3 +754,10 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 })();
+
+/* 26.8 触控反馈：iOS Safari 需要至少一个 touchstart 监听才会在点按时应用 :active。
+   只注册一次；空回调不拦截滚动，passive 保持默认滚动性能。 */
+if (!window.__dsTapFeedbackBound) {
+  window.__dsTapFeedbackBound = true;
+  document.addEventListener('touchstart', function(){}, {passive:true});
+}
