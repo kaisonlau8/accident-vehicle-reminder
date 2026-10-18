@@ -108,17 +108,23 @@
   --ant-control-height-lg: 40px;
   --ant-control-height-mobile: 44px;
 
-  /* ---- z-index 规范：粘性列 1 · 粘性表头 5 · 下拉 40 · 顶栏 100 · 导航遮罩 1000 · 导航抽屉 1001 · 轻提示 1010 ---- */
+  /* ---- z-index 规范：粘性列 1 · 粘性表头 5 · 下拉 40 · 子标题栏 95 · 顶栏 100 · 导航遮罩 1000 · 导航抽屉 1001 · 轻提示 1010 ---- */
   --ant-z-sticky-col: 1;
   --ant-z-sticky-header: 5;
+  --ant-z-subbar: 95;
   --ant-z-topbar: 100;
   --ant-z-dropdown: 40;
   --ant-z-nav-mask: 1000;
   --ant-z-nav-drawer: 1001;
   --ant-z-message: 1010;
 
-  /* ---- 顶栏 ---- */
-  --ant-header-height: 46px;   /* antd 水平导航高度 + 底部 1px 分割 */
+  /* ---- 顶栏 / 子标题栏 ----
+     --ds-header-h 是「顶栏含底部 1px 分割线」的总高：cards.js 写入实测值（含 safe-area），
+     子标题栏 top、正文让位、scroll-margin 与折叠复位偏移都用它，不再写死 46/56/57/63。
+     --ds-subbar-h 只在移动端存在（见 5.2）。 */
+  --ant-header-height: 46px;   /* 顶部导航内容高度；桌面总高再 +1px 分割线 */
+  --ds-header-h: calc(var(--ant-header-height) + 1px);
+  --ds-subbar-h: 44px;
 
   /* ---- 动效（只动画 transform/opacity；高度动画一次性测量） ---- */
   --ds-motion-fast: .1s;
@@ -147,6 +153,7 @@
 html {
   -webkit-text-size-adjust: 100%;
   scroll-behavior: smooth;
+  touch-action: manipulation;   /* 禁用双击缩放；单指滚动、双指缩放仍可用 */
 }
 
 body {
@@ -157,6 +164,19 @@ body {
   font-size: var(--ant-font-size-base);
   /* 真正消除横向溢出：不给 body 设固定/最小宽度，宽内容一律收进滚动容器（.tw/.ant-table-wrap） */
   max-width: 100%;
+  touch-action: manipulation;
+  /* 顶部固定区总高（顶栏 + 可选 44px 子标题栏）；有子标题栏时在 5.2 覆盖。 */
+  --ds-fixed-top: var(--ds-header-h);
+}
+
+/* 可交互元素统一 manipulation（双击不缩放）；横向表格区显式恢复 pan-x pan-y 双指滚动。 */
+button, a[href], summary, label, select, textarea,
+input:not([type="checkbox"]):not([type="radio"]),
+[role="button"], [role="tab"], [role="menuitem"], .ds-collapse-toggle {
+  touch-action: manipulation;
+}
+.tw, .ant-table-wrap, .sheet, .table-scroll, .store-table-wrapper, .freeze-wrap {
+  touch-action: pan-x pan-y;
 }
 
 img, svg { max-width: 100%; }
@@ -435,7 +455,50 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
    高度 = 100dvh − 顶栏高。顶栏及其内层禁止 transform/filter/backdrop-filter：一旦出现，
    fixed 后代的包含块会变成顶栏而被裁剪/错位。prefers-reduced-motion 时见文末。 */
 @media (max-width: 860px) {
-  .topbar, .ant-header, .topbar > .in, .ant-header > .in {
+  /* 移动端顶栏：固定 56px（含 1px 分割线）+ 刘海安全区，汉堡 40×40 上下各约 8px。
+     用 fixed 而不是 sticky：iOS 橡皮筋/惯性滚动时 sticky 会短时离开 top:0，
+     与 fixed 子标题栏之间露出缝隙；顶栏背景始终从视口顶端铺满安全区。 */
+  :root {
+    --ant-header-height: 56px;
+    --ds-header-h: calc(56px + env(safe-area-inset-top, 0px));
+  }
+  /* 只有真正带顶栏的页面才为固定顶栏让位；登录页/纯卡片页保持自身垂直居中。 */
+  body:has(> .ant-header, > .topbar, > .nav) {
+    padding-top: var(--ds-header-h);
+    --ds-fixed-top: var(--ds-header-h);
+  }
+  body:has(> .ds-subbar) {
+    --ds-fixed-top: calc(var(--ds-header-h) + var(--ds-subbar-h));
+  }
+  .ant-header, .topbar, .nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: var(--ds-header-h);
+    min-height: var(--ds-header-h);
+    padding-top: env(safe-area-inset-top, 0px);
+    box-sizing: border-box;
+    background: var(--ant-color-bg-container);
+    border-bottom: 1px solid var(--ant-color-split);
+    z-index: var(--ant-z-topbar);
+  }
+  .ant-header > .in, .topbar > .in {
+    height: 100%;
+    min-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+  /* 顶栏系统标题：各系统统一 16/600，与 logo 垂直居中。 */
+  .brand,
+  .nav > h1,
+  .nav .nav-title-text {
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+  .topbar, .ant-header, .topbar > .in, .ant-header > .in,
+  .nav, .nav > h1 {
     transform: none !important;
     filter: none !important;
     backdrop-filter: none !important;
@@ -443,8 +506,8 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
 
   .burger, [data-burger] {
     display: inline-flex;
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     /* 顶栏最右侧：汉堡永远是 .in 里最右的控件（order 压过 brand/nav/userbar） */
     margin-left: auto;
     margin-right: 0;
@@ -454,7 +517,8 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   /* 顶栏已有导航汉堡时：隐藏浮动 #mhero-userbar（否则右上角会出现第二只汉堡叠住）
      并取消 userbar 为自身预留的 padding-right，让顶栏汉堡贴齐右缘。 */
   body:has(.burger) #mhero-userbar,
-  body:has([data-burger]) #mhero-userbar {
+  body:has([data-burger]) #mhero-userbar,
+  body:has(.nav-toggle) #mhero-userbar {
     display: none !important;
   }
   body:has(.burger) > .nav,
@@ -465,6 +529,9 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   body:has([data-burger]) .ant-header {
     padding-right: 0 !important;
   }
+  /* 事故车用页面自带的 .nav-toggle 作唯一汉堡：清掉 userbar 预留的 padding，
+     同时保留事故车自己的 16px 右边距。 */
+  body:has(.nav-toggle) > .nav { padding-right: 16px !important; }
   .burger .ai, [data-burger] .ai {
     position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0;
   }
@@ -472,24 +539,24 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   [data-burger]::before, [data-burger]::after {
     content: "";
     position: absolute;
-    left: 12px;
+    left: 11px;
     width: 18px;
     height: 2px;
     background: currentColor;
     border-radius: 1px;
     transition: transform .3s cubic-bezier(.23, 1, .32, 1), top .3s cubic-bezier(.23, 1, .32, 1), box-shadow .3s;
   }
-  .burger::before, [data-burger]::before { top: 16px; box-shadow: 0 6px 0 currentColor; }
-  .burger::after, [data-burger]::after { top: 28px; }
+  .burger::before, [data-burger]::before { top: 14px; box-shadow: 0 6px 0 currentColor; }
+  .burger::after, [data-burger]::after { top: 26px; }
   .topbar.open .burger::before, .ant-header.open .burger::before,
   .topbar.open [data-burger]::before, .ant-header.open [data-burger]::before {
-    top: 21px;
+    top: 19px;
     box-shadow: none;
     transform: rotate(45deg);
   }
   .topbar.open .burger::after, .ant-header.open .burger::after,
   .topbar.open [data-burger]::after, .ant-header.open [data-burger]::after {
-    top: 21px;
+    top: 19px;
     transform: rotate(-45deg);
   }
   /* 顶栏品牌与汉堡按钮的触控热区 >=44px */
@@ -501,7 +568,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     content: "";
     position: fixed;
     left: 0; right: 0;
-    top: var(--ant-header-height);
+    top: var(--ds-header-h);
     bottom: 0;
     background: rgba(0, 0, 0, .45);
     z-index: var(--ant-z-nav-mask);
@@ -522,7 +589,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     display: block;
     position: fixed;
     left: 0; right: 0;
-    top: var(--ant-header-height);
+    top: var(--ds-header-h);
     bottom: 0;
     width: auto; height: auto; min-height: 0;
     padding: 0; border: 0;
@@ -553,7 +620,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   .menu, .ant-menu {
     display: flex;
     position: fixed;
-    top: var(--ant-header-height);
+    top: var(--ds-header-h);
     right: 0;
     bottom: 0;
     left: auto;
@@ -623,7 +690,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     flex-direction: column;
     align-items: stretch;
     position: fixed;
-    top: var(--ant-header-height);
+    top: var(--ds-header-h);
     right: 0;
     bottom: 0;
     left: auto;
@@ -675,10 +742,12 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
    抽屉同样 300ms translateX，遮罩 300ms opacity。 */
 .hub-drawer-who { display: none; }
 @media (max-width: 860px) {
+  /* .hub-user 是按钮的行内块容器：改成 flex 并撑满头栏内容高，按钮才能真正垂直居中。 */
+  .hub-user { display: flex; align-items: center; height: 100%; }
   .hub-user > button {
-    width: 44px !important;
-    height: 44px !important;
-    min-height: 44px !important;
+    width: 40px !important;
+    height: 40px !important;
+    min-height: 40px !important;
     padding: 0 !important;
     justify-content: center !important;
     position: relative !important;
@@ -693,29 +762,29 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   .hub-user > button::after {
     content: "";
     position: absolute;
-    left: 12px;
+    left: 11px;
     width: 18px;
     height: 2px;
     background: currentColor;
     border-radius: 1px;
     transition: transform .3s cubic-bezier(.23, 1, .32, 1), top .3s cubic-bezier(.23, 1, .32, 1), box-shadow .3s;
   }
-  .hub-user > button::before { top: 16px; box-shadow: 0 6px 0 currentColor; }
-  .hub-user > button::after { top: 28px; }
+  .hub-user > button::before { top: 14px; box-shadow: 0 6px 0 currentColor; }
+  .hub-user > button::after { top: 26px; }
   .hub-user.open > button::before {
-    top: 21px;
+    top: 19px;
     box-shadow: none;
     transform: rotate(45deg);
   }
   .hub-user.open > button::after {
-    top: 21px;
+    top: 19px;
     transform: rotate(-45deg);
   }
   .hub-user::before {
     content: "";
     position: fixed;
     left: 0; right: 0;
-    top: var(--ant-header-height);
+    top: var(--ds-header-h);
     bottom: 0;
     background: rgba(0, 0, 0, .45);
     z-index: var(--ant-z-nav-mask);
@@ -737,7 +806,7 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     display: flex !important;
     flex-direction: column !important;
     position: fixed !important;
-    top: var(--ant-header-height) !important;
+    top: var(--ds-header-h) !important;
     right: 0 !important;
     bottom: 0 !important;
     left: auto !important;
@@ -868,13 +937,13 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   .ds-subbar {
     display: flex;
     position: fixed;
-    top: var(--ds-header-h, var(--ant-header-height));
+    top: var(--ds-header-h);
     left: 0;
     right: 0;
-    z-index: 95;
+    z-index: var(--ant-z-subbar);
     align-items: center;
     gap: 2px;
-    height: 44px;
+    height: var(--ds-subbar-h);
     padding: 0 6px 0 2px;
     background: var(--ant-color-bg-container);
     border-bottom: 1px solid var(--ant-color-split);
@@ -913,7 +982,13 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   body:has([data-ds-back]) .ant-page-header h1,
   body:has([data-ds-back]) .container > h1,
   body:has([data-ds-back]) .container > h2 { display: none; }
-  body:has([data-ds-back]) .container:not(:has(> .ant-header, > .topbar, > .nav)) { padding-top: 44px; }
+  body:has([data-ds-back]) .container:not(:has(> .ant-header, > .topbar, > .nav)) {
+    padding-top: var(--ds-subbar-h);
+  }
+  /* 锚点 / 程序化滚动都避开「顶栏 + 子标题栏」固定区，偏移量来自同一个变量链。 */
+  [id], h1, h2, h3, h4 {
+    scroll-margin-top: calc(var(--ds-fixed-top) + 8px);
+  }
 }
 
 /* 桌面面包屑绝对定位在标题上方，避免插入时推移内容（CLS）。 */
@@ -1369,10 +1444,10 @@ a.ant-btn-loading.is-locked { pointer-events: none; }
   .ant-table-cards .row-form .ant-btn { min-height: 44px; }
 }
 
-/* ---- 9.7 吸顶筛选容器（列表页滚动时筛选保持在顶栏下方） ---- */
+/* ---- 9.7 吸顶筛选容器（列表页滚动时筛选保持在顶栏 + 子标题栏下方） ---- */
 .ant-sticky-filter {
   position: sticky;
-  top: var(--ant-header-height);
+  top: var(--ds-fixed-top, var(--ds-header-h));
   z-index: 20;
 }
 
@@ -2034,6 +2109,15 @@ input[type="text"], input[type="password"], input[type="search"], input[type="da
   .ant-page-header-actions .ant-btn, .ant-page-header-actions .btn { flex: 1 1 100%; }
 }
 
+/* ---- 21.15b 移动端表单控件字号 >=16px：iOS 聚焦时不再自动放大页面。
+           只放在 <=860px，桌面字号保持不变。 ---- */
+@media (max-width: 860px) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  select, textarea {
+    font-size: 16px !important;
+  }
+}
+
 /* ---- 逐条提交（申请页每行自己的提交按钮 + 行内提示） ---- */
 .row-form { margin: 0; }
 .row-form .ant-btn { white-space: nowrap; }
@@ -2468,6 +2552,22 @@ button.ant-btn:active:not(:disabled):not([disabled]),
 }
 .ds-collapse-count { color: rgba(0,0,0,.65); font-weight: 400; }
 .ds-collapse-arrow { margin-left: auto; flex: none; transition: transform .2s; }
+/* 折叠头计数徽标只跟标题走（父级 gap 8px），禁止应用级 margin-left:auto 把它推到行中；
+   剩余空间只由箭头吃掉，箭头永远在最右。`.ant-collapse-extra` 是右侧操作区，保持原样。 */
+:is(summary, .ds-collapse-toggle, .ant-collapse-header, .ds-native-summary) >
+  :is(.store-count, .ant-badge-count, .ds-collapse-count, .ant-collapse-count) {
+  margin-left: 0 !important;
+  flex: none;
+  white-space: nowrap;
+}
+:is(summary, .ds-collapse-toggle, .ant-collapse-header, .ds-native-summary) > .ds-collapse-arrow {
+  margin-left: auto !important;
+}
+/* 同时存在右侧操作区时，让 extra 独占 auto 外边距，箭头紧随其后（仍是最右）。 */
+:is(summary, .ds-collapse-toggle, .ant-collapse-header, .ds-native-summary):has(> .ant-collapse-extra) >
+  .ds-collapse-arrow {
+  margin-left: 8px !important;
+}
 .ds-collapse-toggle[aria-expanded="true"] .ds-collapse-arrow,
 details[open] > summary > .ds-collapse-arrow { transform: rotate(180deg); }
 .ds-collapse-panel { min-width: 0; padding: 12px; }

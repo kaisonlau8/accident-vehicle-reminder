@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <title>{% block title %}事故车提醒系统{% endblock %}</title>
   <link rel="icon" href="/static/brand/favicon.ico" sizes="any">
   <link rel="icon" type="image/png" sizes="16x16" href="/static/brand/icon-16.png">
@@ -26,7 +26,7 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; }
     .nav { background: var(--card-bg); border-bottom: 1px solid var(--border); padding: 12px 24px; display: flex; align-items: center; gap: 24px; }
-    .nav h1 { font-size: 18px; font-weight: 600; color: var(--blue); display: inline-flex; align-items: center; gap: 10px; }
+    .nav h1 { font-size: 16px; font-weight: 600; color: var(--text); display: inline-flex; align-items: center; gap: 8px; }
     .nav .brand-logo { height: 28px; width: auto; display: block; }
     .nav a { color: var(--text); text-decoration: none; font-size: 14px; padding: 6px 12px; border-radius: 4px; }
     .nav a:hover { background: var(--bg); color: var(--blue); }
@@ -78,7 +78,7 @@
       left: 0;
       right: 0;
       bottom: 0;
-      top: var(--nav-h, 56px);
+      top: var(--ds-header-h);
       z-index: 1000;
       background: rgba(0, 0, 0, 0.45);
       opacity: 0;
@@ -115,18 +115,40 @@
        visibility 在退场播完后才隐藏（0s linear 延迟 .3s）。 */
     @media (max-width: 860px) {
       .nav {
-        position: sticky;
-        top: 0;
-        z-index: 1002;
-        flex-wrap: wrap;
-        gap: 8px 8px;
-        padding: 10px 12px 8px;
+        position: fixed;
+        top: 0; left: 0; right: 0;
+        z-index: var(--ant-z-topbar);
+        height: var(--ds-header-h);
+        min-height: var(--ds-header-h);
+        padding: 0 16px;
+        padding-top: env(safe-area-inset-top, 0px);
+        flex-wrap: nowrap;
+        gap: 8px;
         background: #fff;
       }
-      .nav h1 { flex: 1 1 auto; min-width: 0; font-size: 15px; gap: 8px; }
+      /* 抽屉打开时顶栏抬到遮罩之上（与设计系统 4.6 同一层级策略）。 */
+      body.nav-open .nav { z-index: calc(var(--ant-z-nav-drawer) + 1); }
+      .nav h1 { flex: 1 1 auto; min-width: 0; font-size: 16px; gap: 6px; }
       .nav .brand-logo { height: 22px; }
       .nav-title-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .nav-toggle { order: 999; margin-left: auto; }
+      /* 移动端与其余 6 个系统的 DS 汉堡同观感：灰边 #d9d9d9、深色三条杠、白底、
+         6px 圆角；尺寸/按下反馈直接沿用 DS token 与 26.8 的 .nav-toggle 规则。
+         三条杠的旋转仍由事故车自己的抽屉 JS（.is-open）驱动。桌面端保持原蓝色按钮不变。 */
+      .nav-toggle {
+        order: 999;
+        margin-left: auto;
+        width: 40px;
+        height: 40px !important;
+        min-height: 40px !important;
+        padding: 0;
+        border-color: var(--ant-color-border, #d9d9d9);
+        border-radius: var(--ant-radius-md, 6px);
+        background: var(--ant-color-bg-container, #fff);
+        color: var(--ant-color-text, rgba(0, 0, 0, .88));
+      }
+      .nav-toggle:hover { background: var(--ant-color-bg-container, #fff); }
+      .nav-toggle-bar { background: currentColor; }
+      .nav-toggle-text { display: none; }
       .nav-mode { order: 1; display: none; }
       .nav-toggle,
       .nav-overlay,
@@ -134,7 +156,7 @@
       .nav-links {
         position: fixed;
         z-index: 1001;
-        top: var(--nav-h, 56px);
+        top: var(--ds-header-h);
         right: 0;
         bottom: 0;
         width: min(300px, 82vw);
@@ -323,10 +345,6 @@
 
       var mobileQuery = window.matchMedia("(max-width: 860px)");
 
-      function syncNavHeight() {
-        document.documentElement.style.setProperty("--nav-h", nav.offsetHeight + "px");
-      }
-
       function setOpen(open) {
         if (!mobileQuery.matches) open = false;
         drawer.classList.toggle("is-open", open);
@@ -379,7 +397,6 @@
 
       function onViewportChange() {
         suppressMotion();
-        syncNavHeight();
         if (!mobileQuery.matches) setOpen(false);
         else if (!drawer.classList.contains("is-open")) {
           drawer.setAttribute("inert", "");
@@ -389,9 +406,6 @@
 
       if (mobileQuery.addEventListener) mobileQuery.addEventListener("change", onViewportChange);
       else if (mobileQuery.addListener) mobileQuery.addListener(onViewportChange);
-      window.addEventListener("resize", syncNavHeight);
-      window.addEventListener("load", syncNavHeight);
-      syncNavHeight();
       if (mobileQuery.matches) {
         drawer.setAttribute("inert", "");
         drawer.setAttribute("aria-hidden", "true");
