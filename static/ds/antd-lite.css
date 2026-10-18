@@ -332,11 +332,17 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
   cursor: pointer;
   white-space: nowrap;
 }
-.dd a:hover, .dd button.lnk:hover, .dd a:focus-visible, .dd button.lnk:focus-visible,
-.ant-dropdown a:hover {
+.dd a:focus-visible, .dd button.lnk:focus-visible {
   background: rgba(0, 0, 0, .04);
   color: var(--ant-color-text);
   text-decoration: none;
+}
+@media (hover: hover) {
+  .dd a:hover, .dd button.lnk:hover, .ant-dropdown a:hover {
+    background: rgba(0, 0, 0, .04);
+    color: var(--ant-color-text);
+    text-decoration: none;
+  }
 }
 /* 下拉当前项：与顶栏 active 同一 token */
 .dd a.cur, .ant-dropdown a.cur {
@@ -888,7 +894,9 @@ h1, h2, h3, h4, h5, h6 { font-weight: 600; line-height: 1.4; }
     font-size: 18px;
     cursor: pointer;
   }
-  .ds-subbar-back:hover { background: rgba(0, 0, 0, .04); }
+  @media (hover: hover) {
+    .ds-subbar-back:hover { background: rgba(0, 0, 0, .04); }
+  }
   .ds-subbar-back:active { background: rgba(0, 0, 0, .08); }
   .ds-subbar-title {
     flex: 1 1 auto;
@@ -2455,7 +2463,9 @@ button.ant-btn:active:not(:disabled):not([disabled]),
   padding: 10px 14px; border: 0; border-radius: 8px; background: #fafafa;
   color: rgba(0,0,0,.88); font: inherit; font-weight: 600; text-align: left; cursor: pointer;
 }
-.ds-collapse-toggle:hover { background: #e6f4ff; }
+@media (hover: hover) {
+  .ds-collapse-toggle:hover { background: #e6f4ff; }
+}
 .ds-collapse-count { color: rgba(0,0,0,.65); font-weight: 400; }
 .ds-collapse-arrow { margin-left: auto; flex: none; transition: transform .2s; }
 .ds-collapse-toggle[aria-expanded="true"] .ds-collapse-arrow,
@@ -2480,18 +2490,28 @@ details > .ds-native-summary::before, details > .ds-native-summary::after,
   color: rgba(0,0,0,.65); cursor: pointer; line-height: 1; font-size: 16px;
 }
 .ds-close .ai, .ant-notification-notice-close .ai { width: 16px !important; height: 16px !important; }
-.ds-close:hover, .ant-notification-notice-close:hover { background: #f5f5f5 !important; color: rgba(0,0,0,.88); }
+@media (hover: hover) {
+  .ds-close:hover, .ant-notification-notice-close:hover { background: #f5f5f5 !important; color: rgba(0,0,0,.88); }
+}
 .ds-collapse-toggle:focus-visible, .ds-close:focus-visible,
 .ds-native-summary:focus-visible { outline: 2px solid #1677ff; outline-offset: 2px; }
 .ds-link-icon { width: 14px; height: 14px; margin-left: 4px; vertical-align: -.15em; flex: none; }
 a.ds-page-link { cursor: pointer; }
-a.ds-page-link:hover { text-decoration: underline; }
-td:has(> a.ds-page-link):hover { background: #e6f4ff; }
+@media (hover: hover) {
+  a.ds-page-link:hover { text-decoration: underline; }
+  td:has(> a.ds-page-link):hover { background: #e6f4ff; }
+}
 [data-sd-events][role="button"], [data-sd-members], .sd-link { cursor: pointer; }
-[data-sd-events][role="button"]:hover, [data-sd-members]:hover, .sd-link:hover { background: #e6f4ff; }
+@media (hover: hover) {
+  [data-sd-events][role="button"]:hover, [data-sd-members]:hover, .sd-link:hover { background: #e6f4ff; }
+}
 .sd-link { text-decoration: underline; text-underline-offset: 3px; }
 .ds-cell-action, .theater-row { cursor: pointer !important; }
-.ds-cell-action:hover, .ds-cell-action:focus-visible, .theater-row:hover td { background: #e6f4ff !important; }
+.ds-cell-action:focus-visible { background: #e6f4ff !important; }
+@media (hover: hover) {
+  .ds-cell-action:hover { background: #e6f4ff !important; }
+  .theater-row:hover td { background: #e6f4ff !important; }
+}
 .ds-cell-action, .theater-row td:first-child { text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
 .ds-cell-action:focus-visible, .theater-row:focus-visible { outline: 2px solid #1677ff; outline-offset: -2px; }
 @media (max-width: 860px) {
@@ -2523,7 +2543,132 @@ td:has(> a.ds-page-link):hover { background: #e6f4ff; }
   .ant-btn, .btn, .filter-btn, .export-link, button.ant-btn { transition: none !important; }
   .ds-page-enter, .ds-stagger-item, .ds-skeleton, .ds-skeleton-block { animation: none !important; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
-  .ds-subbar-back:active { background: transparent; }
+}
+
+/* ==========================================================================
+   26.8 触控反馈（tap highlight）
+   --------------------------------------------------------------------------
+   · 移动端去掉浏览器默认蓝色高亮；按下时用叠加层提供统一反馈。
+   · 块状可点区用 :is() 获得足够优先级，叠加 background-image，不依赖元素自身底色。
+   · hover 背景只在 (hover:hover) 生效；触屏抬手后不残留。
+   ========================================================================== */
+
+html { -webkit-tap-highlight-color: transparent; }
+*, *::before, *::after { -webkit-tap-highlight-color: transparent; }
+
+/* 深色顶栏容器覆盖叠加层颜色（现有 .ant-header/.topbar/.nav 均为白底） */
+[data-ds-dark-header] { --ds-tap-overlay: rgba(255, 255, 255, .12); }
+
+/* 块状可点区：按下叠加 6% 黑（深色顶栏 12% 白）；不改尺寸，零 CLS */
+:is(
+  button:not(.ant-btn):not(.btn):not(.filter-btn):not(.export-link),
+  summary,
+  [role="button"],
+  [role="tab"],
+  [role="menuitem"],
+  .sd-clickable,
+  .card.sd-clickable,
+  [data-sd-events][role="button"],
+  [data-sd-members],
+  .sd-link,
+  .theater-chip,
+  .hub-user > button,
+  .ant-picker,
+  .dual-slot,
+  .ds-collapse-toggle,
+  .ds-native-summary,
+  .ant-collapse-header,
+  .tab-btn,
+  .toggle-btn,
+  .day-pill,
+  .rule-check,
+  .ant-chip,
+  .brand,
+  .burger,
+  .nav-toggle,
+  [data-burger],
+  .ds-close,
+  .ds-subbar-back,
+  .mi > a,
+  .mi > button,
+  .ant-menu-item > a,
+  .ant-menu-item > button,
+  .dd a,
+  .dd button.lnk,
+  .ant-dropdown a,
+  .ant-dropdown button.lnk,
+  .menu a,
+  .nav a,
+  .nav-links a,
+  .card a[href],
+  li > a[href]
+):active:where(:not(:disabled):not([disabled]):not([aria-disabled="true"])) {
+  background-image: linear-gradient(
+    var(--ds-tap-overlay, rgba(0, 0, 0, .06)),
+    var(--ds-tap-overlay, rgba(0, 0, 0, .06))
+  );
+}
+
+/* 内联文字链接：按下 opacity 降到 .7（主色链接也能看出变化） */
+:is(a[href], a.store-link, a.ds-page-link):active:where(
+  :not(.brand):not(.ant-btn):not(.btn):not(.filter-btn):not(.export-link):not([aria-disabled="true"])
+) {
+  opacity: .7;
+}
+
+/* 表格行/单元格：斑马纹/表头底色优先级高，保留 #f0f0f0 !important */
+.ds-cell-action:active,
+.theater-row:active td,
+.theater-row td:active,
+td:has(> a.ds-page-link):active,
+td:has(> a.ds-page-link:active) {
+  background-color: #f0f0f0 !important;
+}
+
+/* 卡片：叠加层之外再轻微缩放（reduced-motion 下取消） */
+.card.sd-clickable:active:not([aria-disabled="true"]) {
+  transform: scale(.98);
+}
+
+/* 按下即时反馈：只过渡颜色/透明度/缩放，时长走 --ds-motion-fast */
+:where(
+  a[href], button, summary,
+  [role="button"], [role="tab"], [role="menuitem"],
+  .ds-collapse-toggle, .ds-native-summary, .sd-clickable,
+  .theater-row td, .tab-btn, .toggle-btn, .day-pill, .rule-check,
+  .ant-chip, .burger, [data-burger], .nav-toggle, .ds-close, .ds-subbar-back
+):where(:not(:disabled):not([disabled]):not([aria-disabled="true"])) {
+  transition: background-color var(--ds-motion-fast) ease-out,
+              color var(--ds-motion-fast) ease-out,
+              opacity var(--ds-motion-fast) ease-out,
+              transform var(--ds-motion-fast) ease-out;
+}
+
+/* 键盘焦点：保留 2px 蓝色描边；点按（非 focus-visible）不留下焦点环 */
+:where([role="button"], [role="tab"], [role="menuitem"], .sd-clickable, .theater-row):focus-visible {
+  outline: 2px solid #1677ff;
+  outline-offset: 2px;
+}
+:where(
+  a[href], button, summary,
+  [role="button"], [role="tab"], [role="menuitem"],
+  .ds-collapse-toggle, .ds-native-summary, .tab-btn,
+  .burger, [data-burger], .nav-toggle, .ds-close,
+  .ds-subbar-back, .ds-cell-action, .theater-row, .sd-clickable
+):focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* reduced-motion：不缩放，但保留底色/文字反馈 */
+@media (prefers-reduced-motion: reduce) {
+  .card.sd-clickable:active:not([aria-disabled="true"]),
+  .ant-btn:active:not(:disabled):not([disabled]),
+  .btn:active:not(:disabled):not([disabled]),
+  button.ant-btn:active:not(:disabled):not([disabled]),
+  .filter-btn:active:not(:disabled),
+  .export-link:active {
+    transform: none;
+  }
 }
 
 /* 26.7 全局 reduced-motion 兜底：任何页面自有 transition/animation 也不得超过 0.01ms。
