@@ -35,7 +35,20 @@ HEADERS = [
     "门店省",
     "门店市",
     "门店区",
+    "售后负责人2",
+    "售后电话2",
+    "售后open_id2",
+    "售后负责人3",
+    "售后电话3",
+    "售后open_id3",
+    "售后负责人4",
+    "售后电话4",
+    "售后open_id4",
 ]
+
+MANAGER_FIELD_PREFIX = "门店售后业务负责人"
+MANAGER_PHONE_FIELD_PREFIX = "售后业务负责人手机号"
+MANAGER_SLOT_COUNT = 4
 
 
 def _bitable_config() -> tuple[str, str, str]:
@@ -100,6 +113,59 @@ def _normalize_phone(value: Any) -> str:
     return phone
 
 
+def _normalized_fields(fields: dict) -> dict:
+    """字段名去掉所有空白，兼容「售后负责人 1」和「售后负责人1」；同名别名取第一个非空值。"""
+    out: dict = {}
+    for key, value in fields.items():
+        nk = "".join(str(key).split())
+        if nk not in out or (not out[nk] and value):
+            out[nk] = value
+    return out
+
+
+def _manager_slots(fields: dict) -> list[dict | None]:
+    """按 1..4 槽位读取门店售后业务负责人，旧的无编号字段视为槽位1。
+
+    槽位1：编号字段（人或手机号任一非空）整体优先，全空时才整体使用旧字段，
+    不把两个人的姓名/open_id/手机号拼在一起。
+    """
+    normalized = _normalized_fields(fields)
+    slots: list[dict | None] = []
+    for slot in range(1, MANAGER_SLOT_COUNT + 1):
+        name, open_id = _parse_user(normalized.get(f"{MANAGER_FIELD_PREFIX}{slot}"))
+        phone = _normalize_phone(normalized.get(f"{MANAGER_PHONE_FIELD_PREFIX}{slot}"))
+        if slot == 1 and not name and not open_id and not phone:
+            name, open_id = _parse_user(normalized.get(MANAGER_FIELD_PREFIX))
+            phone = _normalize_phone(normalized.get(MANAGER_PHONE_FIELD_PREFIX) or normalized.get("电话1"))
+        if name or open_id or phone:
+            slots.append({"name": name, "phone": phone, "open_id": open_id})
+        else:
+            slots.append(None)
+    return slots
+
+
+def _dedupe_manager_slots(slots: list[dict | None]) -> list[dict | None]:
+    """按 open_id（否则姓名）去重，保留首次出现的槽位，并把重复项里的手机号/open_id 补到首次那条。"""
+    index: dict[str, dict] = {}
+    deduped: list[dict | None] = []
+    for person in slots:
+        if not person:
+            deduped.append(None)
+            continue
+        key = person.get("open_id") or person.get("name") or ""
+        if key and key in index:
+            kept = index[key]
+            kept["phone"] = kept.get("phone") or person.get("phone", "")
+            kept["open_id"] = kept.get("open_id") or person.get("open_id", "")
+            deduped.append(None)
+            continue
+        person = dict(person)
+        if key:
+            index[key] = person
+        deduped.append(person)
+    return deduped
+
+
 def fetch_bitable_records() -> list[dict]:
     """分页拉取多维表格全部记录。"""
     app_token, table_id, view_id = _bitable_config()
@@ -140,7 +206,8 @@ def fetch_bitable_records() -> list[dict]:
 def records_to_rows(records: list[dict]) -> tuple[list[list[Any]], list[str]]:
     """将「参与考核特约店清单」记录转为 list.xlsx 行。
 
-    返回 (rows, warnings)。售后负责人联系人和手机号都空时记入 warnings。
+    售后业务负责人支持 1~4 号槽位，主列写首个非空负责人，其余槽位追加在末尾。
+    返回 (rows, warnings)。所有槽位都没有负责人时记入 warnings。
     """
     rows: list[list[Any]] = []
     warnings: list[str] = []
@@ -152,12 +219,14 @@ def records_to_rows(records: list[dict]) -> tuple[list[list[Any]], list[str]]:
         sup_name, sup_open_id = _parse_user(fields.get("督导"))
         if not sup_name:
             sup_name = _field_text(fields.get("督导姓名"))
-        mgr_name, mgr_open_id = _parse_user(fields.get("门店售后业务负责人"))
-        mgr_phone = _normalize_phone(fields.get("售后业务负责人手机号") or fields.get("电话1"))
-        if not mgr_name and not mgr_open_id and not mgr_phone:
+
+        slots = _dedupe_manager_slots(_manager_slots(fields))
+        managers = [person for person in slots if person]
+        primary = managers[0] if managers else {}
+        if not managers:
             warnings.append(f"{store_code} {_field_text(fields.get('店名称') or fields.get('门店名称'))}".strip())
 
-        rows.append([
+        row = [
             _field_text(fields.get("序号")) or str(idx),
             store_code,
             _field_text(fields.get("区域")),
@@ -165,13 +234,21 @@ def records_to_rows(records: list[dict]) -> tuple[list[list[Any]], list[str]]:
             sup_name,
             _normalize_phone(fields.get("督导手机号") or fields.get("督导飞书电话号")),
             sup_open_id,
-            mgr_name,
-            mgr_phone,
-            mgr_open_id,
+            primary.get("name", ""),
+            primary.get("phone", ""),
+            primary.get("open_id", ""),
             _field_text(fields.get("门店省")),
             _field_text(fields.get("门店市")),
             _field_text(fields.get("门店区")),
-        ])
+        ]
+        for person in slots[1:]:
+            person = person or {}
+            row.extend([
+                person.get("name", ""),
+                person.get("phone", ""),
+                person.get("open_id", ""),
+            ])
+        rows.append(row)
     return rows, warnings
 
 

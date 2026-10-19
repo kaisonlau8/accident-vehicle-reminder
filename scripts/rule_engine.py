@@ -8,7 +8,7 @@
 """
 
 import json
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -44,6 +44,16 @@ def _cell(value) -> str:
     return text
 
 
+def _normalize_region(value) -> str:
+    """区域名归一化：去空白，长度大于1时去掉一个末尾「区」。"""
+    text = "".join(str(value or "").split())
+    if not text:
+        return ""
+    if len(text) > 1 and text.endswith("区"):
+        text = text[:-1]
+    return text
+
+
 def _person(name: str, phone: str, open_id: str = "") -> dict:
     return {"name": name.strip(), "phone": phone.strip(), "open_id": open_id.strip()}
 
@@ -58,7 +68,7 @@ def load_stores_config() -> dict:
     """从 list.xlsx 读取门店→区域→督导/售后负责人。
 
     列：门店编码、区域、门店名称、督导姓名、督导飞书电话号、督导open_id、
-    售后负责人、售后电话、售后open_id。省市区只缓存。
+    售后负责人、售后电话、售后open_id 及 2~4 号售后负责人列。省市区只缓存。
     全国收件人仍从 config/stores.json 读取。
     """
     if not LIST_XLSX_PATH.exists():
@@ -96,11 +106,38 @@ def load_stores_config() -> dict:
             col(row, "督导open_id"),
         )
         # 旧表没有售后负责人列时，退回提醒人1，避免未同步前完全发不出去。
-        manager = _person(
-            col(row, "售后负责人", "提醒人1"),
-            col(row, "售后电话", "电话1"),
-            col(row, "售后open_id"),
-        )
+        service_managers = []
+        for slot in range(1, 5):
+            if slot == 1:
+                manager = _person(
+                    col(row, "售后负责人", "提醒人1"),
+                    col(row, "售后电话", "电话1"),
+                    col(row, "售后open_id"),
+                )
+            else:
+                manager = _person(
+                    col(row, f"售后负责人{slot}", f"提醒人{slot}"),
+                    col(row, f"售后电话{slot}", f"电话{slot}"),
+                    col(row, f"售后open_id{slot}"),
+                )
+            if manager["name"] or manager["phone"] or manager["open_id"]:
+                service_managers.append(manager)
+
+        # 同一人可能因主列 + 编号列重复出现，按 open_id（否则姓名）去重。
+        unique_managers = []
+        seen_managers: dict = {}
+        for manager in service_managers:
+            key = manager["open_id"] or manager["name"]
+            if key and key in seen_managers:
+                kept = seen_managers[key]
+                kept["phone"] = kept["phone"] or manager["phone"]
+                kept["open_id"] = kept["open_id"] or manager["open_id"]
+                continue
+            if key:
+                seen_managers[key] = manager
+            unique_managers.append(manager)
+        service_managers = unique_managers
+        service_manager = service_managers[0] if service_managers else _person("", "")
 
         stores[store_code] = {
             "name": store_name,
@@ -108,12 +145,14 @@ def load_stores_config() -> dict:
             "province": col(row, "门店省"),
             "city": col(row, "门店市"),
             "district": col(row, "门店区"),
-            "service_manager": manager,
+            "service_manager": service_manager,
+            "service_managers": service_managers,
             "supervisor": supervisor,
         }
 
-        if region_name and _person_reachable(supervisor):
-            regions[region_name] = {"name": region_name, "supervisor": supervisor}
+        region_key = _normalize_region(region_name)
+        if region_key and _person_reachable(supervisor):
+            regions[region_key] = {"name": region_name, "supervisor": supervisor}
 
     return {
         "stores": stores,
@@ -191,20 +230,41 @@ _missing_manager_logged: set[str] = set()
 
 
 def _store_manager_targets(store_config: dict, store_code: str) -> list[dict]:
-    """门店告警和门店报表只发给售后业务负责人。"""
+    """门店告警和门店报表发给全部可达的售后业务负责人。"""
     store_info = store_config.get("stores", {}).get(store_code, {})
-    target = _as_target(store_info.get("service_manager"))
-    if not target:
+    managers = store_info.get("service_managers")
+    people = list(managers) if isinstance(managers, list) else []
+    # 兼容只有单个 service_manager 的旧配置/旧表。
+    people.append(store_info.get("service_manager"))
+    targets = _dedupe_targets([person for person in people if _person_reachable(person)])
+    if not targets:
         if store_code not in _missing_manager_logged:
             _missing_manager_logged.add(store_code)
             print(f"[rule] 门店 {store_code} 无售后负责人，跳过门店消息")
         return []
-    return [target]
+    return targets
+
+
+def _find_region_info(region_name: str, store_config: dict) -> dict:
+    """按归一化区域名查找区域督导，兼容旧配置里的原始区域名。"""
+    regions = store_config.get("regions", {})
+    if not isinstance(regions, dict):
+        return {}
+    key = _normalize_region(region_name)
+    region_info = regions.get(key) if key else None
+    if region_info is None:
+        region_info = regions.get(str(region_name or "").strip())
+    if region_info is None and key:
+        for candidate, info in regions.items():
+            if _normalize_region(candidate) == key:
+                region_info = info
+                break
+    return region_info if isinstance(region_info, dict) else {}
 
 
 def _get_region_recipient_phones(region_name: str, store_config: dict) -> list[dict]:
     """区域报表：该区域督导 + 本系统全国收件人。"""
-    region_info = store_config.get("regions", {}).get(region_name, {})
+    region_info = _find_region_info(region_name, store_config)
     people = []
     sup = _as_target(region_info.get("supervisor"))
     if sup:
@@ -216,7 +276,12 @@ def _get_region_recipient_phones(region_name: str, store_config: dict) -> list[d
 def _get_national_recipient_phones(store_config: dict) -> list[dict]:
     """全国报表：全部区域督导 + 本系统全国收件人。"""
     people = []
-    for region_info in store_config.get("regions", {}).values():
+    regions = store_config.get("regions", {})
+    if not isinstance(regions, dict):
+        regions = {}
+    for region_info in regions.values():
+        if not isinstance(region_info, dict):
+            continue
         sup = _as_target(region_info.get("supervisor"))
         if sup:
             people.append(sup)
@@ -225,10 +290,8 @@ def _get_national_recipient_phones(store_config: dict) -> list[dict]:
 
 
 def _directory_region(rec: dict, stores_config: dict) -> str:
-    """区域以联系人表为准（华中 1 / 华中 2），门店未收录时回退 DMS 大区。"""
-    code = str(rec.get("store_code") or "").strip()
-    info = stores_config.get("stores", {}).get(code, {})
-    return str(info.get("region") or rec.get("region") or "").strip() or "未分配区域"
+    """区域只取 DMS 大区并归一化，飞书区域不覆盖 DMS 归属。"""
+    return _normalize_region(rec.get("region")) or "无区域"
 
 
 def _determine_alert_level(days: int, levels: list[dict]) -> dict | None:
@@ -252,13 +315,36 @@ def _format_level_message(level: dict, rec: dict) -> str:
     )
 
 
+def _filter_assessed_records(records: list[dict], stores_config: dict) -> tuple[list[dict], dict]:
+    """只保留飞书同步清单内门店的工单；清单为空时不过滤。"""
+    configured_stores = stores_config.get("stores") or {}
+    known_codes = {_cell(code) for code in configured_stores if _cell(code)}
+    ignored = {"records": 0, "stores": []}
+    if not known_codes:
+        print("[rule] 警告: 门店清单为空或不可用，跳过参与考核范围过滤")
+        return records, ignored
+
+    kept: list[dict] = []
+    ignored_codes: set[str] = set()
+    for rec in records:
+        store_code = _cell(rec.get("store_code"))
+        if store_code in known_codes:
+            kept.append(rec)
+            continue
+        ignored["records"] += 1
+        if store_code and store_code not in ignored_codes:
+            ignored_codes.add(store_code)
+            ignored["stores"].append(store_code)
+    return kept, ignored
+
+
 def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> dict:
     """评估所有规则，返回通知任务。"""
     if stores_config is None:
         stores_config = load_stores_config()
 
     rules = load_rules_config()
-    records = repair_orders.get("records", [])
+    records, ignored_not_in_list = _filter_assessed_records(repair_orders.get("records", []), stores_config)
     snapshot_date = repair_orders.get("snapshot_date", date.today().strftime("%Y-%m-%d"))
     snapshot_start = repair_orders.get("snapshot_start", (date.today() - timedelta(days=30)).strftime("%Y-%m-%d"))
     date_range = f"{snapshot_start} ~ {snapshot_date}"
@@ -270,6 +356,7 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
         "store_reports": {},
         "region_reports": {},
         "national_report": {},
+        "ignored_not_in_list": ignored_not_in_list,
     }
 
     # ── Rule 1: 分级告警（≥7天未完工，每日跟踪）───────────────
@@ -333,6 +420,7 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
     _save_alert_history(alert_history)
 
     # ── Rule 3, 4, 5: 汇总报表 ────────────────────────────
+    # records 已在入口按飞书参与考核门店清单过滤。
     active_records = [r for r in records if not r.get("is_qc_completed") and r.get("current_stage") != "已作废"]
 
     # 按门店分组
@@ -340,7 +428,12 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
     for rec in active_records:
         store_groups[rec.get("store_code", "UNKNOWN")].append(rec)
 
-    # 按联系人表区域分组（华中 1 / 华中 2），不用 DMS「大区」原文
+    # 门店区域：该店全部（已过滤）工单里最常见的归一化 DMS 大区（含已完工记录）
+    store_region_votes: dict = defaultdict(Counter)
+    for rec in records:
+        store_region_votes[rec.get("store_code", "UNKNOWN")][_directory_region(rec, stores_config)] += 1
+
+    # 按 DMS 大区（归一化）分组，飞书区域只用于找该区域督导
     region_groups = defaultdict(list)
     for rec in active_records:
         region_groups[_directory_region(rec, stores_config)].append(rec)
@@ -351,6 +444,8 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
         count_7d = sum(1 for v in vehicles if 7 <= v.get("days_in_shop", 0) < 10)
         count_10d = sum(1 for v in vehicles if 10 <= v.get("days_in_shop", 0) < 14)
         count_14d = sum(1 for v in vehicles if v.get("days_in_shop", 0) >= 14)
+        votes = store_region_votes.get(store_code) or Counter(_directory_region(v, stores_config) for v in vehicles)
+        store_region = votes.most_common(1)[0][0]
 
         overdue_vehicles = [
             {
@@ -366,7 +461,7 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
 
         results["store_reports"][store_code] = {
             "store_name": store_info.get("name", vehicles[0].get("store_name", "")),
-            "region": store_info.get("region", vehicles[0].get("region", "")),
+            "region": store_region,
             "total": len(vehicles),
             "count_7d": count_7d,
             "count_10d": count_10d,
@@ -379,21 +474,19 @@ def evaluate_rules(repair_orders: dict, stores_config: dict | None = None) -> di
 
     # Rule 4: 区域报表
     for region_name, vehicles in region_groups.items():
-        region_info = stores_config.get("regions", {}).get(region_name, {})
         stores_summary = []
-        seen_stores = set()
-        for v in vehicles:
-            sc = v.get("store_code", "")
-            if sc in seen_stores:
-                continue
-            seen_stores.add(sc)
+        by_store: dict = defaultdict(list)
+        for v in vehicles:  # 门店行只统计本区域内的记录（一家店的工单可能分属多个 DMS 大区）
+            by_store[v.get("store_code", "")].append(v)
+        seen_stores = set(by_store)
+        for sc, sv in by_store.items():
             sr = results["store_reports"].get(sc, {})
             stores_summary.append({
-                "store_name": sr.get("store_name", v.get("store_name", "")),
-                "total": sr.get("total", 0),
-                "count_7d": sr.get("count_7d", 0),
-                "count_10d": sr.get("count_10d", 0),
-                "count_14d": sr.get("count_14d", 0),
+                "store_name": sr.get("store_name", sv[0].get("store_name", "")),
+                "total": len(sv),
+                "count_7d": sum(1 for v in sv if 7 <= v.get("days_in_shop", 0) < 10),
+                "count_10d": sum(1 for v in sv if 10 <= v.get("days_in_shop", 0) < 14),
+                "count_14d": sum(1 for v in sv if v.get("days_in_shop", 0) >= 14),
             })
 
         results["region_reports"][region_name] = {
